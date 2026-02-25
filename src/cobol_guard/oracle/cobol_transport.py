@@ -73,9 +73,14 @@ def read_transactions_dat(path: Path) -> list[Transaction]:
 
 
 def compile_cobol(source: Path, output_executable: Path) -> None:
+    if not source.exists():
+        raise RuntimeError(f"COBOL source not found: {source}")
     output_executable.parent.mkdir(parents=True, exist_ok=True)
     command = ["cobc", "-x", "-o", str(output_executable), str(source)]
-    completed = subprocess.run(command, capture_output=True, text=True)
+    try:
+        completed = subprocess.run(command, capture_output=True, text=True)
+    except FileNotFoundError as exc:
+        raise RuntimeError("cobc was not found on PATH. Install GnuCOBOL and retry.") from exc
     if completed.returncode != 0:
         raise RuntimeError(
             f"cobc compile failed (exit={completed.returncode})\nstdout={completed.stdout}\nstderr={completed.stderr}"

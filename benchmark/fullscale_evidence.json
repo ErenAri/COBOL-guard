@@ -1,0 +1,20 @@
+{
+  "batch": {
+    "chunk_size": 50000,
+    "closing_total_cents": 20278522244,
+    "duration_seconds": 3.0518172001466155,
+    "records_per_second": 327673.6234240891,
+    "records_processed": 1000000,
+    "restart_injected_failure": true,
+    "restart_rework_chunks": 1
+  },
+  "candidate_v2": {
+    "duration_seconds": 0.13582570012658834,
+    "operations": 20000,
+    "p95_ms": 0.0035,
+    "p99_ms": 0.0052,
+    "tps": 147247.53843609992
+  },
+  "generated_at_utc": "2026-02-25T21:57:54.290301+00:00",
+  "profile_id": "local-midscale-v1"
+}
