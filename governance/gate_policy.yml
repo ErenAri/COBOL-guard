@@ -1,0 +1,52 @@
+version: 1
+
+severity_rules:
+  blocker_fields:
+    - amount_cents
+    - balance_before_cents
+    - balance_after_cents
+    - total_post_cents
+    - total_reverse_cents
+    - net_delta_cents
+    - closing_total_cents
+  critical_fields:
+    - status
+    - audit_event
+  major_conditions:
+    - missing_record
+    - schema_mismatch
+    - ordering_violation
+  minor_fields:
+    - processed_at
+    - run_id
+
+blast_radius:
+  max_changed_records_ratio: 0.001
+  override_change_class: intended_behavior_change
+
+performance:
+  candidate_v2:
+    txn_tps_min: 150.0
+    txn_p95_ms_max: 250.0
+    txn_p99_ms_max: 500.0
+  batch:
+    records_min: 1000000
+    duration_seconds_max: 2700.0
+    restart_rework_chunks_max: 1
+
+required_evidence:
+  - run_manifest
+  - diff_report
+  - invariant_report
+  - rationale
+  - signatures
+
+rebless:
+  allowed_change_classes:
+    - bug_fix
+    - schema_evolution
+    - determinism_fix
+    - intended_behavior_change
+  two_person_approval: true
+  forbid_author_only_approval: true
+  min_signatures: 2

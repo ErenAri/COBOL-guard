@@ -1,0 +1,67 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 3 * * *"
+
+jobs:
+  test-and-gates:
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e .[dev]
+
+      - name: Unit Tests
+        run: pytest -q
+
+      - name: Harness Verify
+        run: |
+          ORACLE_DIR=$(python -m cobol_guard.harness.cli run --target oracle --case fixtures/cases/basic.yml)
+          V2_DIR=$(python -m cobol_guard.harness.cli run --target v2 --case fixtures/cases/basic.yml)
+          python -m cobol_guard.harness.cli diff --baseline-dir "$ORACLE_DIR" --candidate-dir "$V2_DIR"
+          python -m cobol_guard.harness.cli verify --baseline-dir "$ORACLE_DIR" --candidate-dir "$V2_DIR" --determinism-case fixtures/cases/basic.yml --adapter-parity-case fixtures/cases/basic.yml
+
+      - name: Governance Promotion
+        run: |
+          python -m cobol_guard.harness.cli bless --baseline candidate --target oracle --case fixtures/cases/basic.yml --change-class bug_fix --ticket CI-1 --risk-statement "ci validation" --author ci
+          python -m cobol_guard.harness.cli keygen --name ci_approver_a
+          python -m cobol_guard.harness.cli keygen --name ci_approver_b
+          python -m cobol_guard.harness.cli sign-manifest --manifest baselines/candidate/basic/baseline_manifest.json --key governance/keys/ci_approver_a.private.pem
+          python -m cobol_guard.harness.cli sign-manifest --manifest baselines/candidate/basic/baseline_manifest.json --key governance/keys/ci_approver_b.private.pem
+          python -m cobol_guard.harness.cli promote-baseline --manifest baselines/candidate/basic/baseline_manifest.json --signature baselines/candidate/basic/baseline_manifest.ci_approver_a.sig.json --signature baselines/candidate/basic/baseline_manifest.ci_approver_b.sig.json
+
+  performance-gates:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e .[dev]
+
+      - name: Run Full Benchmark And Assert Gates
+        run: |
+          python -m cobol_guard.harness.cli benchmark --case fixtures/cases/basic.yml --profile benchmark/profile.yml --assert-gates

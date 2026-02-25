@@ -1,0 +1,31 @@
+[project]
+name = "cobol-guard"
+version = "0.1.0"
+description = "Enterprise-grade COBOL modernization assurance harness"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "pyyaml>=6.0",
+  "cryptography>=42.0.0",
+  "fastapi>=0.115.0",
+  "uvicorn>=0.30.0",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.0.0",
+]
+
+[project.scripts]
+gm = "cobol_guard.harness.cli:main"
+v2-api = "cobol_guard.candidate.service:main"
+
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]

@@ -1,0 +1,22 @@
+profile_id: local-midscale-v1
+cpu:
+  cores: 8
+  class: x86_64-modern
+memory:
+  ram_gb: 16
+docker_limits:
+  cpus: "6"
+  memory: "12g"
+storage:
+  medium: ssd
+datasets:
+  seed_ids:
+    - seed-basic-v1
+warmup:
+  iterations: 1
+run_repetitions:
+  deterministic_repeats: 5
+workload:
+  txn_operations: 20000
+  batch_records: 1000000
+  chunk_size: 50000

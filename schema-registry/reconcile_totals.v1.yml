@@ -1,0 +1,70 @@
+schema_id: reconcile_totals
+version: 1.0.0
+record_layout:
+  - name: business_date
+    offset: 1
+    length: 8
+    type: string
+  - name: total_post_cents
+    offset: 9
+    length: 14
+    type: int64
+    signed: true
+  - name: total_reverse_cents
+    offset: 23
+    length: 14
+    type: int64
+    signed: true
+  - name: net_delta_cents
+    offset: 37
+    length: 14
+    type: int64
+    signed: true
+  - name: closing_total_cents
+    offset: 51
+    length: 14
+    type: int64
+    signed: true
+  - name: records_processed
+    offset: 65
+    length: 10
+    type: int64
+    signed: false
+  - name: applied_records
+    offset: 75
+    length: 10
+    type: int64
+    signed: false
+  - name: exception_count
+    offset: 85
+    length: 10
+    type: int64
+    signed: false
+encoding_spec:
+  charset: utf-8
+  newline: lf
+primary_key_fields:
+  - business_date
+canonical_sort_key_fields:
+  - business_date
+record_fingerprint_fields:
+  - business_date
+  - net_delta_cents
+  - closing_total_cents
+money_fields:
+  - total_post_cents
+  - total_reverse_cents
+  - net_delta_cents
+  - closing_total_cents
+nullability_defaults: {}
+canonicalization_spec_version: 1
+canonical_byte_encoding_rules:
+  int64:
+    signed: leading_sign
+    zero_pad: true
+  string:
+    align: left
+    pad_char: " "
+    truncate: true
+compatibility_policy: backward
+hash_algorithm_version: sha256-v1

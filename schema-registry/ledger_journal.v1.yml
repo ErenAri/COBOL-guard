@@ -1,0 +1,90 @@
+schema_id: ledger_journal
+version: 1.0.0
+record_layout:
+  - name: sequence_no
+    offset: 1
+    length: 10
+    type: int64
+    signed: false
+  - name: business_date
+    offset: 11
+    length: 8
+    type: string
+  - name: account_id
+    offset: 19
+    length: 12
+    type: string
+  - name: request_id
+    offset: 31
+    length: 16
+    type: string
+  - name: operation
+    offset: 47
+    length: 8
+    type: string
+  - name: original_request_id
+    offset: 55
+    length: 16
+    type: string
+  - name: amount_cents
+    offset: 71
+    length: 14
+    type: int64
+    signed: true
+  - name: balance_before_cents
+    offset: 85
+    length: 14
+    type: int64
+    signed: true
+  - name: balance_after_cents
+    offset: 99
+    length: 14
+    type: int64
+    signed: true
+  - name: status
+    offset: 113
+    length: 18
+    type: string
+  - name: audit_event
+    offset: 131
+    length: 22
+    type: string
+encoding_spec:
+  charset: utf-8
+  newline: lf
+primary_key_fields:
+  - sequence_no
+  - business_date
+  - account_id
+canonical_sort_key_fields:
+  - business_date
+  - account_id
+  - sequence_no
+record_fingerprint_fields:
+  - sequence_no
+  - business_date
+  - account_id
+  - request_id
+  - operation
+  - amount_cents
+  - balance_after_cents
+  - status
+money_fields:
+  - amount_cents
+  - balance_before_cents
+  - balance_after_cents
+nullability_defaults:
+  original_request_id: ""
+  status: "UNKNOWN"
+  audit_event: "UNKNOWN"
+canonicalization_spec_version: 1
+canonical_byte_encoding_rules:
+  int64:
+    signed: leading_sign
+    zero_pad: true
+  string:
+    align: left
+    pad_char: " "
+    truncate: true
+compatibility_policy: backward
+hash_algorithm_version: sha256-v1

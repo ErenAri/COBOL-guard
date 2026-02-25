@@ -1,0 +1,6 @@
+{"request_id":"REQ000000000001","operation":"POST","original_request_id":"","account_id":"ACC000000001","amount_cents":15000,"business_date":"20260110","event_time":"20260110100000"}
+{"request_id":"REQ000000000002","operation":"POST","original_request_id":"","account_id":"ACC000000001","amount_cents":5000,"business_date":"20260110","event_time":"20260110100500"}
+{"request_id":"REQ000000000003","operation":"POST","original_request_id":"","account_id":"ACC000000002","amount_cents":1200,"business_date":"20260110","event_time":"20260110101000"}
+{"request_id":"REQ000000000004","operation":"REVERSE","original_request_id":"REQ000000000002","account_id":"ACC000000001","amount_cents":0,"business_date":"20260110","event_time":"20260110102000"}
+{"request_id":"REQ000000000004","operation":"REVERSE","original_request_id":"REQ000000000002","account_id":"ACC000000001","amount_cents":0,"business_date":"20260110","event_time":"20260110102100"}
+{"request_id":"REQ000000000005","operation":"REVERSE","original_request_id":"REQ_DOES_NOT_EXIST","account_id":"ACC000000002","amount_cents":0,"business_date":"20260110","event_time":"20260110102200"}

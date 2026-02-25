@@ -1,0 +1,53 @@
+schema_id: exception_report
+version: 1.0.0
+record_layout:
+  - name: business_date
+    offset: 1
+    length: 8
+    type: string
+  - name: account_id
+    offset: 9
+    length: 12
+    type: string
+  - name: request_id
+    offset: 21
+    length: 16
+    type: string
+  - name: error_code
+    offset: 37
+    length: 20
+    type: string
+  - name: detail
+    offset: 57
+    length: 80
+    type: string
+encoding_spec:
+  charset: utf-8
+  newline: lf
+primary_key_fields:
+  - business_date
+  - account_id
+  - request_id
+canonical_sort_key_fields:
+  - business_date
+  - account_id
+  - request_id
+record_fingerprint_fields:
+  - business_date
+  - account_id
+  - request_id
+  - error_code
+money_fields: []
+nullability_defaults:
+  detail: ""
+canonicalization_spec_version: 1
+canonical_byte_encoding_rules:
+  int64:
+    signed: leading_sign
+    zero_pad: true
+  string:
+    align: left
+    pad_char: " "
+    truncate: true
+compatibility_policy: backward
+hash_algorithm_version: sha256-v1
