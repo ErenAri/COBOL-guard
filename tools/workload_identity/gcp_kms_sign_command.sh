@@ -29,5 +29,5 @@ gcloud kms asymmetric-sign \
   --signature-file="$TMP_SIGNATURE" \
   --quiet
 
-# gcloud writes signature in base64 format; emit as single-line stdout.
-tr -d '\n' < "$TMP_SIGNATURE"
+# gcloud signature file is raw bytes for EC_SIGN_ED25519; emit base64 text.
+base64 < "$TMP_SIGNATURE" | tr -d '\n'
