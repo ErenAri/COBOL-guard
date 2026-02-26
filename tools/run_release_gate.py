@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+from datetime import UTC, datetime
 import json
 import subprocess
 import time
@@ -139,6 +140,43 @@ def _latest_release_gate_run(repo: str, ref: str) -> dict:
     return dict(payload[0])
 
 
+def _latest_release_gate_run_after(repo: str, ref: str, created_after_epoch: float) -> dict | None:
+    result = _run(
+        [
+            "gh",
+            "run",
+            "list",
+            "--repo",
+            repo,
+            "--workflow",
+            "release-gate.yml",
+            "--branch",
+            ref,
+            "--limit",
+            "20",
+            "--json",
+            "databaseId,status,conclusion,url,createdAt",
+        ]
+    )
+    payload = json.loads(result.stdout)
+    newest: dict | None = None
+    newest_ts = float("-inf")
+    for item in payload:
+        created_at = str(item.get("createdAt", ""))
+        if not created_at:
+            continue
+        try:
+            ts = datetime.strptime(created_at, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=UTC).timestamp()
+        except ValueError:
+            continue
+        if ts < created_after_epoch:
+            continue
+        if ts > newest_ts:
+            newest = dict(item)
+            newest_ts = ts
+    return newest
+
+
 def _print_failed_logs(repo: str, run_id: str) -> None:
     result = _run(
         [
@@ -161,12 +199,24 @@ def _print_failed_logs(repo: str, run_id: str) -> None:
 
 def main() -> int:
     args = _build_parser().parse_args()
+    dispatch_started = time.time() - 1.0
     _dispatch(args)
 
     started = time.time()
     run: dict = {}
     while True:
-        run = _latest_release_gate_run(repo=args.repo, ref=args.ref)
+        candidate = _latest_release_gate_run_after(
+            repo=args.repo,
+            ref=args.ref,
+            created_after_epoch=dispatch_started,
+        )
+        if candidate is None:
+            if time.time() - started > args.timeout_seconds:
+                raise TimeoutError("Timed out waiting for release-gate run to appear")
+            print("waiting for release-gate run creation...")
+            time.sleep(args.poll_seconds)
+            continue
+        run = candidate
         status = str(run.get("status", ""))
         conclusion = str(run.get("conclusion", ""))
         print(f"release-gate run {run.get('databaseId')} status={status} conclusion={conclusion}")
