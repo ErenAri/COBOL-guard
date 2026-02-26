@@ -6,6 +6,7 @@ from cobol_guard.harness.cli import cmd_bless
 
 
 def test_bless_includes_enterprise_manifest_metadata(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("GITHUB_RUN_ID", "22455430536")
     monkeypatch.setenv("COBOL_GUARD_WORKFLOW_RUN_ID", "123456")
     monkeypatch.setenv("COBOL_GUARD_ENVIRONMENT", "staging")
     monkeypatch.setenv("COBOL_GUARD_PROVENANCE_REF", "gha://run/123456")

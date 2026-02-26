@@ -31,7 +31,15 @@ jobs:
           import yaml
 
           workflow = yaml.safe_load(Path(".github/workflows/release-gate.yml").read_text(encoding="utf-8"))
-          inputs = workflow.get("on", {}).get("workflow_dispatch", {}).get("inputs", {})
+          on_block = workflow.get("on", workflow.get(True, {}))
+          if not isinstance(on_block, dict):
+              on_block = {}
+          dispatch = on_block.get("workflow_dispatch", {})
+          if not isinstance(dispatch, dict):
+              dispatch = {}
+          inputs = dispatch.get("inputs", {})
+          if not isinstance(inputs, dict):
+              inputs = {}
           signing_mode = inputs.get("signing_mode")
           if not signing_mode:
               print("release-gate.yml missing workflow_dispatch.inputs.signing_mode", file=sys.stderr)

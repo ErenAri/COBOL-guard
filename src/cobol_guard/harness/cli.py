@@ -65,6 +65,13 @@ def _sha256_file(path: Path) -> str:
     return hasher.hexdigest()
 
 
+def _workflow_run_id_from_env() -> str:
+    override = os.environ.get("COBOL_GUARD_WORKFLOW_RUN_ID", "")
+    if override:
+        return override
+    return os.environ.get("GITHUB_RUN_ID", "")
+
+
 def cmd_run(args: argparse.Namespace) -> int:
     version = args.version or ("v1" if args.target == "oracle" else "v2")
     run_dir = execute_case(
@@ -126,7 +133,7 @@ def cmd_bless(args: argparse.Namespace) -> int:
         "harness_version": "0.1.0",
         "policy_version": str(policy.get("version", "unknown")),
         "policy_sha256": _sha256_file(path=policy_path),
-        "workflow_run_id": os.environ.get("GITHUB_RUN_ID", os.environ.get("COBOL_GUARD_WORKFLOW_RUN_ID", "")),
+        "workflow_run_id": _workflow_run_id_from_env(),
         "environment": os.environ.get("COBOL_GUARD_ENVIRONMENT", "local"),
         "provenance_ref": os.environ.get("COBOL_GUARD_PROVENANCE_REF", ""),
         "signing_mode": os.environ.get("COBOL_GUARD_SIGNING_MODE", "ed25519-pem"),
@@ -423,7 +430,7 @@ def cmd_evidence_pack(args: argparse.Namespace) -> int:
         provenance_ref=args.provenance_ref,
         policy_version=str(policy.get("version", "unknown")),
         environment=os.environ.get("COBOL_GUARD_ENVIRONMENT", "local"),
-        workflow_run_id=os.environ.get("GITHUB_RUN_ID", os.environ.get("COBOL_GUARD_WORKFLOW_RUN_ID", "")),
+        workflow_run_id=_workflow_run_id_from_env(),
     )
     if args.output:
         write_json(path=Path(args.output).resolve(), payload=result)
