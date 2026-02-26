@@ -66,9 +66,12 @@ record_fingerprint_fields:
   - account_id
   - request_id
   - operation
+  - original_request_id
   - amount_cents
+  - balance_before_cents
   - balance_after_cents
   - status
+  - audit_event
 money_fields:
   - amount_cents
   - balance_before_cents
@@ -79,6 +82,11 @@ nullability_defaults:
   audit_event: "UNKNOWN"
 canonicalization_spec_version: 1
 canonical_byte_encoding_rules:
+  field_order: record_layout
+  null_materialization: true
+  bytes:
+    charset: utf-8
+    bom: false
   int64:
     signed: leading_sign
     zero_pad: true

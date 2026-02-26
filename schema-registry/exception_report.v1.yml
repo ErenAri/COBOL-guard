@@ -37,11 +37,17 @@ record_fingerprint_fields:
   - account_id
   - request_id
   - error_code
+  - detail
 money_fields: []
 nullability_defaults:
   detail: ""
 canonicalization_spec_version: 1
 canonical_byte_encoding_rules:
+  field_order: record_layout
+  null_materialization: true
+  bytes:
+    charset: utf-8
+    bom: false
   int64:
     signed: leading_sign
     zero_pad: true

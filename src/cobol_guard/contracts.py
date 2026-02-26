@@ -4,6 +4,10 @@ from dataclasses import dataclass, asdict
 from typing import Any
 
 
+def _fit_text(value: Any, width: int) -> str:
+    return str(value)[:width]
+
+
 @dataclass(slots=True)
 class Transaction:
     request_id: str
@@ -17,13 +21,13 @@ class Transaction:
     @classmethod
     def from_dict(cls, payload: dict[str, Any]) -> "Transaction":
         return cls(
-            request_id=str(payload["request_id"]),
-            operation=str(payload["operation"]).upper(),
-            original_request_id=str(payload.get("original_request_id", "")),
-            account_id=str(payload["account_id"]),
+            request_id=_fit_text(payload["request_id"], 16),
+            operation=_fit_text(str(payload["operation"]).upper(), 8),
+            original_request_id=_fit_text(payload.get("original_request_id", ""), 16),
+            account_id=_fit_text(payload["account_id"], 12),
             amount_cents=int(payload.get("amount_cents", 0)),
-            business_date=str(payload["business_date"]),
-            event_time=str(payload["event_time"]),
+            business_date=_fit_text(payload["business_date"], 8),
+            event_time=_fit_text(payload["event_time"], 14),
         )
 
     def to_dict(self) -> dict[str, Any]:

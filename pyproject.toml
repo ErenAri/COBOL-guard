@@ -29,3 +29,8 @@ package-dir = {"" = "src"}
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.pytest.ini_options]
+markers = [
+  "performance: performance benchmark and throughput validation tests",
+]

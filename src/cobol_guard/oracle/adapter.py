@@ -11,13 +11,14 @@ from typing import Any
 
 from cobol_guard.candidate.engine import EngineResult
 from cobol_guard.contracts import ExceptionRecord, JournalRecord, ReconcileTotals, Transaction
+from cobol_guard.io_utils import read_fixed_width_records
 from cobol_guard.oracle.cobol_transport import (
     compile_cobol,
-    read_transactions_dat,
     run_cobol_executable,
     write_transactions_dat,
 )
 from cobol_guard.oracle.oracle_python_reference import run_reference_oracle
+from cobol_guard.schema_registry import load_schema
 
 
 @dataclass(slots=True)
@@ -98,9 +99,22 @@ class OracleAdapter:
             in_path = work_dir / "transactions.dat"
             write_transactions_dat(path=in_path, transactions=list(transactions))
             run_cobol_executable(executable=executable, working_dir=work_dir)
-            echoed_path = work_dir / "ledger_journal.dat"
-            echoed_transactions = read_transactions_dat(path=echoed_path)
-            return run_reference_oracle(transactions=echoed_transactions, business_date=business_date)
+
+            journal_schema = load_schema("ledger_journal", version_hint="1")
+            totals_schema = load_schema("reconcile_totals", version_hint="1")
+            exceptions_schema = load_schema("exception_report", version_hint="1")
+
+            journal_rows = read_fixed_width_records(path=work_dir / "ledger_journal.dat", schema=journal_schema)
+            totals_rows = read_fixed_width_records(path=work_dir / "reconcile_totals.dat", schema=totals_schema)
+            exception_rows = read_fixed_width_records(path=work_dir / "exception_report.dat", schema=exceptions_schema)
+            if not totals_rows:
+                raise RuntimeError("COBOL executable did not produce reconcile_totals.dat")
+
+            return EngineResult(
+                journal=[JournalRecord(**row) for row in journal_rows],
+                exceptions=[ExceptionRecord(**row) for row in exception_rows],
+                totals=ReconcileTotals(**totals_rows[0]),
+            )
 
     def run(self, transactions: Iterable[Transaction], business_date: str) -> EngineResult:
         if self.mode == "python-reference":

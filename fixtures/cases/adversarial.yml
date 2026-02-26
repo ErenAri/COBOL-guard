@@ -1,0 +1,6 @@
+case_id: adversarial
+business_date: "20260111"
+seed_id: seed-adversarial-v1
+benchmark_profile_id: local-midscale-v1
+chunk_size: 4
+transactions_path: fixtures/inputs/adversarial_transactions.jsonl

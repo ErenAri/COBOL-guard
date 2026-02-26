@@ -1,0 +1,6 @@
+case_id: adversarial_restart
+business_date: "20260113"
+seed_id: seed-adversarial-restart-v1
+benchmark_profile_id: local-midscale-v1
+chunk_size: 10
+transactions_path: fixtures/inputs/adversarial_restart_transactions.jsonl

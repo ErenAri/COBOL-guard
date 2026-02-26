@@ -49,8 +49,13 @@ canonical_sort_key_fields:
   - business_date
 record_fingerprint_fields:
   - business_date
+  - total_post_cents
+  - total_reverse_cents
   - net_delta_cents
   - closing_total_cents
+  - records_processed
+  - applied_records
+  - exception_count
 money_fields:
   - total_post_cents
   - total_reverse_cents
@@ -59,6 +64,11 @@ money_fields:
 nullability_defaults: {}
 canonicalization_spec_version: 1
 canonical_byte_encoding_rules:
+  field_order: record_layout
+  null_materialization: true
+  bytes:
+    charset: utf-8
+    bom: false
   int64:
     signed: leading_sign
     zero_pad: true

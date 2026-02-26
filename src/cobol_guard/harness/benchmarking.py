@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
+import platform
 import random
 import time
 from dataclasses import dataclass
@@ -186,20 +188,45 @@ def run_benchmark(case_payload: dict[str, Any], profile_payload: dict[str, Any])
     business_date = str(case_payload["business_date"])
     seed_id = str(case_payload["seed_id"])
     workload = dict(profile_payload.get("workload", {}))
+    datasets = dict(profile_payload.get("datasets", {}))
+    profile_seed_ids = [str(item) for item in datasets.get("seed_ids", [])]
+    benchmark_seed_id = profile_seed_ids[0] if profile_seed_ids else seed_id
     txn_operations = int(workload.get("txn_operations", 20000))
     batch_records = int(workload.get("batch_records", 100000))
     chunk_size = int(workload.get("chunk_size", 10000))
 
-    txn_metrics = benchmark_transaction_path(operations=txn_operations, business_date=business_date, seed=seed_id)
+    txn_metrics = benchmark_transaction_path(
+        operations=txn_operations,
+        business_date=business_date,
+        seed=benchmark_seed_id,
+    )
     batch_metrics = benchmark_batch_path(
         records=batch_records,
         chunk_size=chunk_size,
         business_date=business_date,
-        seed=seed_id,
+        seed=benchmark_seed_id,
     )
     return {
         "profile_id": profile_payload.get("profile_id", "unknown"),
         "generated_at_utc": datetime.now(UTC).isoformat(),
+        "case_seed_id": seed_id,
+        "benchmark_seed_id": benchmark_seed_id,
+        "profile_seed_ids": profile_seed_ids,
+        "profile_snapshot": {
+            "cpu": dict(profile_payload.get("cpu", {})),
+            "memory": dict(profile_payload.get("memory", {})),
+            "docker_limits": dict(profile_payload.get("docker_limits", {})),
+            "storage": dict(profile_payload.get("storage", {})),
+            "datasets": datasets,
+            "warmup": dict(profile_payload.get("warmup", {})),
+            "run_repetitions": dict(profile_payload.get("run_repetitions", {})),
+            "workload": workload,
+        },
+        "runtime_environment": {
+            "platform": platform.platform(),
+            "python_version": platform.python_version(),
+            "cpu_count": os.cpu_count(),
+        },
         "candidate_v2": txn_metrics,
         "batch": batch_metrics,
     }

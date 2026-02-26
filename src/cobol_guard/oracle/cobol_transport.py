@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -72,13 +74,63 @@ def read_transactions_dat(path: Path) -> list[Transaction]:
     return transactions
 
 
+def _default_msys_cobc() -> Path | None:
+    candidate = Path(r"C:\msys64\ucrt64\bin\cobc.exe")
+    if candidate.exists():
+        return candidate
+    return None
+
+
+def _default_msys_config_dir() -> Path | None:
+    candidate = Path(r"C:\msys64\ucrt64\share\gnucobol\config")
+    if candidate.exists():
+        return candidate
+    return None
+
+
+def _default_msys_runtime_bin() -> Path | None:
+    candidate = Path(r"C:\msys64\ucrt64\bin")
+    if candidate.exists():
+        return candidate
+    return None
+
+
+def _resolve_cobc_command() -> str:
+    explicit = os.environ.get("COBOL_GUARD_COBC_PATH")
+    if explicit:
+        return explicit
+    detected = shutil.which("cobc")
+    if detected:
+        return detected
+    msys_cobc = _default_msys_cobc()
+    if msys_cobc is not None:
+        return str(msys_cobc)
+    return "cobc"
+
+
+def _build_cobol_env() -> dict[str, str]:
+    env = os.environ.copy()
+    if not env.get("COB_CONFIG_DIR"):
+        config_dir = _default_msys_config_dir()
+        if config_dir is not None:
+            env["COB_CONFIG_DIR"] = str(config_dir)
+    runtime_bin = _default_msys_runtime_bin()
+    if runtime_bin is not None:
+        existing = env.get("PATH", "")
+        runtime_bin_text = str(runtime_bin)
+        if runtime_bin_text.lower() not in existing.lower():
+            env["PATH"] = runtime_bin_text + os.pathsep + existing
+    return env
+
+
 def compile_cobol(source: Path, output_executable: Path) -> None:
     if not source.exists():
         raise RuntimeError(f"COBOL source not found: {source}")
     output_executable.parent.mkdir(parents=True, exist_ok=True)
-    command = ["cobc", "-x", "-o", str(output_executable), str(source)]
+    command = [_resolve_cobc_command(), "-x", "-free", "-o", str(output_executable), str(source)]
+    env = _build_cobol_env()
     try:
-        completed = subprocess.run(command, capture_output=True, text=True)
+        completed = subprocess.run(command, capture_output=True, text=True, env=env)
     except FileNotFoundError as exc:
         raise RuntimeError("cobc was not found on PATH. Install GnuCOBOL and retry.") from exc
     if completed.returncode != 0:
@@ -88,7 +140,8 @@ def compile_cobol(source: Path, output_executable: Path) -> None:
 
 
 def run_cobol_executable(executable: Path, working_dir: Path) -> None:
-    completed = subprocess.run([str(executable)], cwd=str(working_dir), capture_output=True, text=True)
+    env = _build_cobol_env()
+    completed = subprocess.run([str(executable)], cwd=str(working_dir), capture_output=True, text=True, env=env)
     if completed.returncode != 0:
         raise RuntimeError(
             f"cobol executable failed (exit={completed.returncode})\nstdout={completed.stdout}\nstderr={completed.stderr}"

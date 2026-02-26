@@ -31,18 +31,28 @@ python -m cobol_guard.harness.cli diff --baseline-dir runs/<oracle-run> --candid
 python -m cobol_guard.harness.cli verify --baseline-dir runs/<oracle-run> --candidate-dir runs/<v2-run>
 ```
 
-5. Run checkpointed batch with failure injection then resume:
+5. Run adversarial parity case (out-of-order + duplicates + malformed ops):
 ```bash
-python -m cobol_guard.harness.cli run --target v2 --case fixtures/cases/basic.yml --run-id demo-restart --fail-after-chunks 1
-python -m cobol_guard.harness.cli run --target v2 --case fixtures/cases/basic.yml --run-id demo-restart --resume
+python -m cobol_guard.harness.cli run --target oracle --case fixtures/cases/adversarial.yml
+python -m cobol_guard.harness.cli run --target v2 --case fixtures/cases/adversarial.yml
+python -m cobol_guard.harness.cli diff --baseline-dir runs/<oracle-adversarial-run> --candidate-dir runs/<v2-adversarial-run>
+python -m cobol_guard.harness.cli verify --baseline-dir runs/<oracle-adversarial-run> --candidate-dir runs/<v2-adversarial-run>
 ```
 
-6. Run benchmark report:
+6. Run restart adversarial case with failure injection, resume, and parity verify:
+```bash
+python -m cobol_guard.harness.cli run --target v2 --case fixtures/cases/adversarial_restart.yml --run-id demo-restart --fail-after-chunks 2
+python -m cobol_guard.harness.cli run --target v2 --case fixtures/cases/adversarial_restart.yml --run-id demo-restart --resume
+python -m cobol_guard.harness.cli run --target oracle --case fixtures/cases/adversarial_restart.yml
+python -m cobol_guard.harness.cli verify --baseline-dir runs/<oracle-restart-run> --candidate-dir runs/demo-restart
+```
+
+7. Run benchmark report:
 ```bash
 python -m cobol_guard.harness.cli benchmark --case fixtures/cases/basic.yml --profile benchmark/profile.yml
 ```
 
-7. Start the candidate API:
+8. Start the candidate API:
 ```bash
 v2-api
 ```
@@ -51,7 +61,7 @@ v2-api
 
 - `python-reference` (default): in-process oracle implementation for local development.
 - `cobol-command`: execute an external command that produces `oracle_result.json`.
-- `cobol-executable`: compile/run `programs/v1/LEDGER01.cbl` with `cobc`, then round-trip transactions through the executable.
+- `cobol-executable`: compile/run `programs/v1/LEDGER01.cbl` with `cobc` and consume COBOL-produced fixed-width oracle artifacts directly.
 
 Set external oracle mode:
 ```bash
@@ -110,5 +120,5 @@ python -m cobol_guard.harness.cli promote-baseline \
 - `fixtures/`: deterministic sample inputs and case definitions.
 - `src/cobol_guard/`: harness, candidate service, oracle adapter, governance logic.
 - `.github/workflows/ci.yml`: test and gate automation.
-- `.github/workflows/ci.yml` also contains scheduled/manual performance gate runs.
+- `.github/workflows/ci.yml` also contains scheduled/manual performance gate runs and a GnuCOBOL `cobol-executable` parity job (basic + adversarial cases).
 - `tests/`: core behavioral and control tests.

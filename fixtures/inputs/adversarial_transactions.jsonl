@@ -1,0 +1,15 @@
+{"request_id":"A000000000000001","operation":"REVERSE","original_request_id":"A000000000000010","account_id":"ACC000000001","amount_cents":0,"business_date":"20260111","event_time":"20260111090000"}
+{"request_id":"A000000000000010","operation":"POST","original_request_id":"","account_id":"ACC000000001","amount_cents":10000,"business_date":"20260111","event_time":"20260111090100"}
+{"request_id":"A000000000000010","operation":"POST","original_request_id":"","account_id":"ACC000000001","amount_cents":10000,"business_date":"20260111","event_time":"20260111090200"}
+{"request_id":"A000000000000020","operation":"POST","original_request_id":"","account_id":"ACC000000002","amount_cents":2200,"business_date":"20260111","event_time":"20260111090300"}
+{"request_id":"A000000000000021","operation":"REVERSE","original_request_id":"A000000000000020","account_id":"ACC000000002","amount_cents":0,"business_date":"20260111","event_time":"20260111090400"}
+{"request_id":"A000000000000021","operation":"REVERSE","original_request_id":"A000000000000020","account_id":"ACC000000002","amount_cents":0,"business_date":"20260111","event_time":"20260111090500"}
+{"request_id":"A000000000000022","operation":"REVERSE","original_request_id":"A000000000000020","account_id":"ACC000000002","amount_cents":0,"business_date":"20260111","event_time":"20260111090600"}
+{"request_id":"A000000000000023","operation":"REVERSE","original_request_id":"A000000000000010","account_id":"ACC000000009","amount_cents":0,"business_date":"20260111","event_time":"20260111090700"}
+{"request_id":"A000000000000030","operation":"BADOP","original_request_id":"","account_id":"ACC000000001","amount_cents":500,"business_date":"20260111","event_time":"20260111090800"}
+{"request_id":"A000000000000040","operation":"POST","original_request_id":"","account_id":"ACC000000003","amount_cents":300,"business_date":"20260112","event_time":"20260112090900"}
+{"request_id":"A000000000000011","operation":"POST","original_request_id":"","account_id":"ACC000000001","amount_cents":700,"business_date":"20260111","event_time":"20260111091000"}
+{"request_id":"A000000000000024","operation":"REVERSE","original_request_id":"A000000000000010","account_id":"ACC000000001","amount_cents":0,"business_date":"20260111","event_time":"20260111091100"}
+{"request_id":"A000000000000024","operation":"REVERSE","original_request_id":"A000000000000010","account_id":"ACC000000001","amount_cents":0,"business_date":"20260111","event_time":"20260111091200"}
+{"request_id":"A000000000000050","operation":"POST","original_request_id":"","account_id":"ACC000000004","amount_cents":1,"business_date":"20260111","event_time":"20260111091300"}
+{"request_id":"A000000000000051","operation":"REVERSE","original_request_id":"A999999999999999","account_id":"ACC000000004","amount_cents":0,"business_date":"20260111","event_time":"20260111091400"}

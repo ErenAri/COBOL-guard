@@ -34,6 +34,7 @@ def classify_field(field_name: str, policy: dict[str, Any]) -> str:
 def evaluate_gate(
     changed_records_ratio: float,
     changed_fields: list[str],
+    changed_conditions: list[str] | None,
     invariant_failures: list[str],
     policy: dict[str, Any],
     change_class: str,
@@ -64,6 +65,11 @@ def evaluate_gate(
             majors.append(entry)
         else:
             minors.append(entry)
+
+    major_conditions = set(policy["severity_rules"].get("major_conditions", []))
+    for condition in changed_conditions or []:
+        if condition in major_conditions:
+            majors.append(f"MAJOR_CONDITION:{condition}")
 
     for failed_invariant in invariant_failures:
         blockers.append(f"invariant_failed:{failed_invariant}")

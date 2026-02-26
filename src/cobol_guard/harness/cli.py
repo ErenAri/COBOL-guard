@@ -185,6 +185,7 @@ def cmd_verify(args: argparse.Namespace) -> int:
     decision = evaluate_gate(
         changed_records_ratio=diff_report.changed_records_ratio,
         changed_fields=diff_report.changed_fields,
+        changed_conditions=diff_report.changed_conditions,
         invariant_failures=invariant_failures,
         policy=policy,
         change_class=args.change_class,
