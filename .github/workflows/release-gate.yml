@@ -15,6 +15,14 @@ on:
         options:
           - cobol-executable
           - python-reference
+      cloud_provider:
+        description: "Immutable storage and OIDC provider"
+        required: true
+        default: "gcp"
+        type: choice
+        options:
+          - gcp
+          - aws
       signing_mode:
         description: "Signing mode for release manifests"
         required: true
@@ -45,15 +53,15 @@ on:
         required: false
         default: ""
       immutable_bucket:
-        description: "Immutable object-lock bucket name"
+        description: "Immutable evidence bucket name (GCS or S3)"
         required: false
         default: ""
       immutable_prefix:
-        description: "Immutable bucket key prefix"
+        description: "Immutable evidence object prefix"
         required: false
         default: "golden-evidence"
       immutable_retention_days:
-        description: "Object lock retention days"
+        description: "Immutable retention days"
         required: false
         default: "365"
 
@@ -68,6 +76,9 @@ jobs:
     env:
       AWS_ROLE_TO_ASSUME: ${{ secrets.AWS_ROLE_TO_ASSUME }}
       AWS_REGION: ${{ secrets.AWS_REGION }}
+      GCP_WORKLOAD_IDENTITY_PROVIDER: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+      GCP_SERVICE_ACCOUNT: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+      GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -113,14 +124,45 @@ jobs:
           sudo apt-get install -y gnucobol
           cobc --version
 
+      - name: Validate Cloud Identity Configuration
+        run: |
+          if [ "${{ inputs.cloud_provider }}" = "aws" ]; then
+            if [ -z "${AWS_ROLE_TO_ASSUME}" ] || [ -z "${AWS_REGION}" ]; then
+              echo "AWS mode requires AWS_ROLE_TO_ASSUME and AWS_REGION."
+              exit 2
+            fi
+          elif [ "${{ inputs.cloud_provider }}" = "gcp" ]; then
+            if [ -z "${GCP_WORKLOAD_IDENTITY_PROVIDER}" ] || [ -z "${GCP_SERVICE_ACCOUNT}" ]; then
+              echo "GCP mode requires GCP_WORKLOAD_IDENTITY_PROVIDER and GCP_SERVICE_ACCOUNT."
+              exit 2
+            fi
+          else
+            echo "Unsupported cloud_provider: ${{ inputs.cloud_provider }}"
+            exit 2
+          fi
+
       - name: Configure AWS Credentials (OIDC)
-        if: ${{ env.AWS_ROLE_TO_ASSUME != '' && env.AWS_REGION != '' }}
+        if: ${{ inputs.cloud_provider == 'aws' }}
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ env.AWS_ROLE_TO_ASSUME }}
           aws-region: ${{ env.AWS_REGION }}
 
+      - name: Configure GCP Credentials (OIDC)
+        if: ${{ inputs.cloud_provider == 'gcp' }}
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ env.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ env.GCP_SERVICE_ACCOUNT }}
+
+      - name: Setup gcloud
+        if: ${{ inputs.cloud_provider == 'gcp' }}
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ env.GCP_PROJECT_ID }}
+
       - name: Ensure AWS CLI
+        if: ${{ inputs.cloud_provider == 'aws' }}
         run: |
           if ! command -v aws >/dev/null 2>&1; then
             sudo apt-get update
@@ -128,9 +170,14 @@ jobs:
           fi
           aws --version
 
+      - name: Ensure gcloud CLI
+        if: ${{ inputs.cloud_provider == 'gcp' }}
+        run: gcloud --version
+
       - name: Resolve Immutable Storage Target
         id: immutable
         env:
+          CLOUD_PROVIDER: ${{ inputs.cloud_provider }}
           INPUT_BUCKET: ${{ inputs.immutable_bucket }}
           SECRET_BUCKET: ${{ secrets.IMMUTABLE_EVIDENCE_BUCKET }}
           INPUT_PREFIX: ${{ inputs.immutable_prefix }}
@@ -146,7 +193,15 @@ jobs:
             PREFIX="golden-evidence"
           fi
           KEY="${PREFIX}/${GITHUB_SHA}/${{ inputs.evidence_pack_id }}.zip"
-          URI="s3://${BUCKET}/${KEY}"
+          if [ "${CLOUD_PROVIDER}" = "gcp" ]; then
+            URI="gs://${BUCKET}/${KEY}"
+          elif [ "${CLOUD_PROVIDER}" = "aws" ]; then
+            URI="s3://${BUCKET}/${KEY}"
+          else
+            echo "Unsupported cloud_provider: ${CLOUD_PROVIDER}"
+            exit 2
+          fi
+          echo "provider=${CLOUD_PROVIDER}" >> "$GITHUB_OUTPUT"
           echo "bucket=$BUCKET" >> "$GITHUB_OUTPUT"
           echo "key=$KEY" >> "$GITHUB_OUTPUT"
           echo "uri=$URI" >> "$GITHUB_OUTPUT"
@@ -296,9 +351,10 @@ jobs:
 
           echo "pack_id=$PACK_ID" >> "$GITHUB_OUTPUT"
 
-      - name: Upload Evidence Pack To Immutable Bucket
+      - name: Upload Evidence Pack To Immutable Storage
         id: immutable_upload
         env:
+          PROVIDER: ${{ steps.immutable.outputs.provider }}
           BUCKET: ${{ steps.immutable.outputs.bucket }}
           KEY: ${{ steps.immutable.outputs.key }}
           URI: ${{ steps.immutable.outputs.uri }}
@@ -306,17 +362,35 @@ jobs:
         run: |
           RETENTION_UNTIL=$(date -u -d "+${RETENTION_DAYS} days" '+%Y-%m-%dT%H:%M:%SZ')
           mkdir -p release-evidence/immutable
-          aws s3api put-object \
-            --bucket "$BUCKET" \
-            --key "$KEY" \
-            --body "dist/evidence/${{ steps.pack.outputs.pack_id }}.zip" \
-            --object-lock-mode GOVERNANCE \
-            --object-lock-retain-until-date "$RETENTION_UNTIL" \
-            > release-evidence/immutable/upload_result.json
+          if [ "${PROVIDER}" = "aws" ]; then
+            aws s3api put-object \
+              --bucket "$BUCKET" \
+              --key "$KEY" \
+              --body "dist/evidence/${{ steps.pack.outputs.pack_id }}.zip" \
+              --object-lock-mode GOVERNANCE \
+              --object-lock-retain-until-date "$RETENTION_UNTIL" \
+              > release-evidence/immutable/upload_result.json
 
-          VERSION_ID=$(python -c "import json;print(json.load(open('release-evidence/immutable/upload_result.json',encoding='utf-8')).get('VersionId',''))")
-          ETAG=$(python -c "import json;print(json.load(open('release-evidence/immutable/upload_result.json',encoding='utf-8')).get('ETag',''))")
-          python -c "import json; p={'immutable_ref':'${URI}','bucket':'${BUCKET}','key':'${KEY}','version_id':'${VERSION_ID}','etag':'${ETAG}','retention_days':'${RETENTION_DAYS}','retention_until_utc':'${RETENTION_UNTIL}'}; open('release-evidence/immutable/immutability_proof.json','w',encoding='utf-8').write(json.dumps(p,indent=2,sort_keys=True)+'\\n')"
+            VERSION_ID=$(python -c "import json;print(json.load(open('release-evidence/immutable/upload_result.json',encoding='utf-8')).get('VersionId',''))")
+            ETAG=$(python -c "import json;print(json.load(open('release-evidence/immutable/upload_result.json',encoding='utf-8')).get('ETag',''))")
+            python -c "import json; p={'cloud_provider':'aws','immutable_ref':'${URI}','bucket':'${BUCKET}','key':'${KEY}','version_id':'${VERSION_ID}','etag':'${ETAG}','retention_days':'${RETENTION_DAYS}','retention_until_utc':'${RETENTION_UNTIL}'}; open('release-evidence/immutable/immutability_proof.json','w',encoding='utf-8').write(json.dumps(p,indent=2,sort_keys=True)+'\\n')"
+          elif [ "${PROVIDER}" = "gcp" ]; then
+            gcloud storage cp \
+              "dist/evidence/${{ steps.pack.outputs.pack_id }}.zip" \
+              "${URI}" \
+              --if-generation-match=0 \
+              --retain-until="${RETENTION_UNTIL}" \
+              --retention-mode=Locked
+            gcloud storage objects describe "${URI}" --format=json > release-evidence/immutable/upload_result.json
+
+            GENERATION=$(python -c "import json;print(json.load(open('release-evidence/immutable/upload_result.json',encoding='utf-8')).get('generation',''))")
+            METAGENERATION=$(python -c "import json;print(json.load(open('release-evidence/immutable/upload_result.json',encoding='utf-8')).get('metageneration',''))")
+            ETAG=$(python -c "import json;print(json.load(open('release-evidence/immutable/upload_result.json',encoding='utf-8')).get('etag',''))")
+            python -c "import json; p={'cloud_provider':'gcp','immutable_ref':'${URI}','bucket':'${BUCKET}','key':'${KEY}','generation':'${GENERATION}','metageneration':'${METAGENERATION}','etag':'${ETAG}','retention_days':'${RETENTION_DAYS}','retention_until_utc':'${RETENTION_UNTIL}'}; open('release-evidence/immutable/immutability_proof.json','w',encoding='utf-8').write(json.dumps(p,indent=2,sort_keys=True)+'\\n')"
+          else
+            echo "Unsupported cloud provider: ${PROVIDER}"
+            exit 2
+          fi
           echo "immutable_ref=$URI" >> "$GITHUB_OUTPUT"
 
       - name: Upload Release Evidence Pack

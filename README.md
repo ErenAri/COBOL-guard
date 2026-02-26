@@ -181,13 +181,15 @@ Use `.github/workflows/release-gate.yml` for controlled promotion from CI:
 - enforces two valid Ed25519 signatures
 - promotes candidate baseline only after gates pass
 - builds and uploads a signed evidence pack artifact
+- `cloud_provider` input controls immutable storage and OIDC path (`gcp` default, `aws` optional)
 - default signing mode is `kms-command` using:
   - `RELEASE_SIGNER_A_KMS_SIGN_COMMAND`
   - `RELEASE_SIGNER_B_KMS_SIGN_COMMAND`
 - immutable evidence upload configuration:
   - `IMMUTABLE_EVIDENCE_BUCKET` (or workflow input `immutable_bucket`)
   - optional `IMMUTABLE_EVIDENCE_PREFIX` (or workflow input `immutable_prefix`)
-  - `AWS_ROLE_TO_ASSUME` + `AWS_REGION` for OIDC credential federation
+  - GCP OIDC: `GCP_WORKLOAD_IDENTITY_PROVIDER`, `GCP_SERVICE_ACCOUNT`, optional `GCP_PROJECT_ID`
+  - AWS OIDC (optional path): `AWS_ROLE_TO_ASSUME`, `AWS_REGION`
 - PEM fallback mode secrets:
   - `RELEASE_SIGNER_A_PRIVATE_KEY_PEM`
   - `RELEASE_SIGNER_B_PRIVATE_KEY_PEM`
@@ -226,6 +228,7 @@ python tools/run_release_gate.py \
   --risk-statement "first golden production evidence run" \
   --author release-bot \
   --evidence-pack-id v0.1 \
+  --cloud-provider gcp \
   --signing-mode kms-command
 ```
 

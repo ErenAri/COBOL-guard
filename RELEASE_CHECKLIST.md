@@ -11,9 +11,9 @@ Use this checklist for each promoted baseline release (for example `v0.1`).
 - [ ] Immutable evidence storage is configured:
   - [ ] `IMMUTABLE_EVIDENCE_BUCKET`
   - [ ] optional `IMMUTABLE_EVIDENCE_PREFIX`
-- [ ] OIDC cloud credentials are configured:
-  - [ ] `AWS_ROLE_TO_ASSUME`
-  - [ ] `AWS_REGION`
+- [ ] OIDC cloud credentials are configured for selected provider:
+  - [ ] GCP (recommended): `GCP_WORKLOAD_IDENTITY_PROVIDER`, `GCP_SERVICE_ACCOUNT`, optional `GCP_PROJECT_ID`
+  - [ ] AWS (optional): `AWS_ROLE_TO_ASSUME`, `AWS_REGION`
 - [ ] If using `pem-secret` signing mode, private key secrets are configured:
   - [ ] `RELEASE_SIGNER_A_PRIVATE_KEY_PEM`
   - [ ] `RELEASE_SIGNER_B_PRIVATE_KEY_PEM`
@@ -26,6 +26,7 @@ Use this checklist for each promoted baseline release (for example `v0.1`).
 - [ ] Trigger `.github/workflows/release-gate.yml` manually with inputs:
   - [ ] `case_path` (default: `fixtures/cases/basic.yml`)
   - [ ] `oracle_mode` (recommended: `cobol-executable`)
+  - [ ] `cloud_provider` (recommended: `gcp`)
   - [ ] `signing_mode` (recommended: `kms-command`)
   - [ ] `change_class`
   - [ ] `ticket`

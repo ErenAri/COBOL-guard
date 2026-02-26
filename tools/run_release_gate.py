@@ -21,6 +21,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--ref", default="main")
     parser.add_argument("--case-path", default="fixtures/cases/basic.yml")
     parser.add_argument("--oracle-mode", default="cobol-executable", choices=["cobol-executable", "python-reference"])
+    parser.add_argument("--cloud-provider", default="gcp", choices=["gcp", "aws"])
     parser.add_argument("--signing-mode", default="kms-command", choices=["kms-command", "pem-secret"])
     parser.add_argument("--change-class", default="bug_fix")
     parser.add_argument("--ticket", required=True)
@@ -73,6 +74,7 @@ def _dispatch(args: argparse.Namespace) -> None:
     requested_fields = {
         "case_path": args.case_path,
         "oracle_mode": args.oracle_mode,
+        "cloud_provider": args.cloud_provider,
         "signing_mode": args.signing_mode,
         "change_class": args.change_class,
         "ticket": args.ticket,

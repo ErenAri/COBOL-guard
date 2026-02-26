@@ -14,20 +14,24 @@ Release-gate workflow expects these secrets in `kms-command` mode:
 - `RELEASE_SIGNER_A_KMS_SIGN_COMMAND`
 - `RELEASE_SIGNER_B_KMS_SIGN_COMMAND`
 
-## AWS (Recommended Current Path)
+## GCP (Recommended Current Path)
 
 ### Prerequisites
 
-- S3 bucket with Object Lock enabled for immutable evidence.
-- KMS asymmetric keys for:
+- Workload Identity Federation provider for GitHub OIDC.
+- Service account with:
+  - `cloudkms.cryptoKeyVersions.useToSign`
+  - storage object upload permissions on immutable evidence bucket.
+- GCS bucket configured with object retention policy/lock for immutable evidence.
+- Two asymmetric KMS keys for:
   - `release_signer_a`
   - `release_signer_b`
-- IAM role trusted by GitHub OIDC provider.
 
 ### Required GitHub Secrets
 
-- `AWS_ROLE_TO_ASSUME`
-- `AWS_REGION`
+- `GCP_WORKLOAD_IDENTITY_PROVIDER`
+- `GCP_SERVICE_ACCOUNT`
+- optional: `GCP_PROJECT_ID`
 - `IMMUTABLE_EVIDENCE_BUCKET`
 - optional: `IMMUTABLE_EVIDENCE_PREFIX`
 - `RELEASE_SIGNER_A_KMS_SIGN_COMMAND`
@@ -38,29 +42,40 @@ Release-gate workflow expects these secrets in `kms-command` mode:
 Use script-based templates (avoids shell quoting issues):
 
 ```bash
-bash tools/workload_identity/aws_kms_sign_command.sh <kms-key-id-or-arn> "{payload_b64}"
+bash tools/workload_identity/gcp_kms_sign_command.sh <project_id> <location> <keyring> <key> <version> "{payload_b64}"
 ```
 
 Example secret values:
 
 ```text
-RELEASE_SIGNER_A_KMS_SIGN_COMMAND=bash tools/workload_identity/aws_kms_sign_command.sh arn:aws:kms:us-east-1:111122223333:key/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee "{payload_b64}"
-RELEASE_SIGNER_B_KMS_SIGN_COMMAND=bash tools/workload_identity/aws_kms_sign_command.sh arn:aws:kms:us-east-1:111122223333:key/ffffffff-1111-2222-3333-444444444444 "{payload_b64}"
+RELEASE_SIGNER_A_KMS_SIGN_COMMAND=bash tools/workload_identity/gcp_kms_sign_command.sh my-project us-central1 release-signers release-signer-a 1 "{payload_b64}"
+RELEASE_SIGNER_B_KMS_SIGN_COMMAND=bash tools/workload_identity/gcp_kms_sign_command.sh my-project us-central1 release-signers release-signer-b 1 "{payload_b64}"
 ```
 
-### OIDC Role Policy (Minimum)
+### Minimum IAM Scope
 
-- `kms:Sign` on signer key ARNs
-- `s3:PutObject` on immutable evidence bucket/prefix
-- `s3:PutObjectRetention` when object lock retention is required
+- KMS sign on signer key versions.
+- GCS object create/update metadata on immutable evidence path.
 
-## GCP (Reference Pattern)
+## AWS (Optional Alternate Path)
 
-- Workload Identity Federation pool/provider for GitHub OIDC.
-- Service account with:
-  - `cloudkms.cryptoKeyVersions.useToSign`
-  - storage object upload permissions for immutable archive bucket.
-- KMS sign command must print raw signature bytes as base64.
+- IAM role trusted by GitHub OIDC provider.
+- S3 bucket with Object Lock enabled.
+- KMS asymmetric keys for release signers.
+
+Required secrets:
+- `AWS_ROLE_TO_ASSUME`
+- `AWS_REGION`
+- `IMMUTABLE_EVIDENCE_BUCKET`
+- optional: `IMMUTABLE_EVIDENCE_PREFIX`
+- `RELEASE_SIGNER_A_KMS_SIGN_COMMAND`
+- `RELEASE_SIGNER_B_KMS_SIGN_COMMAND`
+
+Script template:
+
+```bash
+bash tools/workload_identity/aws_kms_sign_command.sh <kms-key-id-or-arn> "{payload_b64}"
+```
 
 ## Azure (Reference Pattern)
 
@@ -72,6 +87,6 @@ RELEASE_SIGNER_B_KMS_SIGN_COMMAND=bash tools/workload_identity/aws_kms_sign_comm
 ## Validation
 
 Use checklist:
-- run `.github/workflows/release-gate.yml` in `kms-command` mode
-- ensure `release-evidence/.../immutability_proof.json` exists
+- run `.github/workflows/release-gate.yml` with `cloud_provider=gcp` and `signing_mode=kms-command`
+- ensure `release-evidence/immutable/immutability_proof.json` exists
 - ensure `verify-evidence-pack` reports `"passed": true`

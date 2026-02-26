@@ -47,6 +47,7 @@ def test_dispatch_only_sends_supported_fields(monkeypatch) -> None:
         lambda repo, ref: {
             "ticket",
             "author",
+            "cloud_provider",
             "signing_mode",
             "immutable_bucket",
             "immutable_prefix",
@@ -66,6 +67,7 @@ def test_dispatch_only_sends_supported_fields(monkeypatch) -> None:
         ref="main",
         case_path="fixtures/cases/basic.yml",
         oracle_mode="cobol-executable",
+        cloud_provider="gcp",
         signing_mode="kms-command",
         change_class="bug_fix",
         ticket="CHG-1",
@@ -85,6 +87,7 @@ def test_dispatch_only_sends_supported_fields(monkeypatch) -> None:
     assert "-f" in cmd
     assert "ticket=CHG-1" in cmd
     assert "author=alice" in cmd
+    assert "cloud_provider=gcp" in cmd
     assert "signing_mode=kms-command" in cmd
     assert "case_path=fixtures/cases/basic.yml" not in cmd
 
@@ -97,6 +100,7 @@ def test_dispatch_requires_enterprise_inputs_by_default(monkeypatch) -> None:
         ref="main",
         case_path="fixtures/cases/basic.yml",
         oracle_mode="cobol-executable",
+        cloud_provider="gcp",
         signing_mode="kms-command",
         change_class="bug_fix",
         ticket="CHG-1",
