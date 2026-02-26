@@ -76,7 +76,7 @@
        01  WS-AMOUNT-EFFECT              PIC S9(13) VALUE 0.
        01  WS-REVERSE-AMOUNT             PIC S9(13) VALUE 0.
 
-       01  WS-STATUS                     PIC X(18).
+       01  WS-STATUS                     PIC X(20).
        01  WS-AUDIT-EVENT                PIC X(22).
        01  WS-DETAIL                     PIC X(80).
 
