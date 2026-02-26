@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -11,11 +13,13 @@ from typing import Any
 
 from cobol_guard.constants import BASELINES_DIR, GOVERNANCE_DIR, KEYS_DIR, RUNS_DIR
 from cobol_guard.governance.evidence_pack import build_evidence_pack
+from cobol_guard.governance.evidence_verify import verify_evidence_pack
 from cobol_guard.governance.policy import evaluate_gate, load_policy
 from cobol_guard.governance.signatures import (
     generate_ed25519_keypair,
     read_signature,
     sign_file,
+    sign_file_via_command,
     verify_signature,
     write_signature,
 )
@@ -53,6 +57,14 @@ def _unique_sorted(items: list[str]) -> list[str]:
     return sorted(set(items))
 
 
+def _sha256_file(path: Path) -> str:
+    hasher = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(65536), b""):
+            hasher.update(chunk)
+    return hasher.hexdigest()
+
+
 def cmd_run(args: argparse.Namespace) -> int:
     version = args.version or ("v1" if args.target == "oracle" else "v2")
     run_dir = execute_case(
@@ -81,6 +93,9 @@ def cmd_bless(args: argparse.Namespace) -> int:
         chunk_size_override=args.chunk_size,
     )
     case = load_case(case_path=Path(args.case).resolve())
+    policy_path = Path(args.policy).resolve() if args.policy else (GOVERNANCE_DIR / "gate_policy.yml")
+    policy = load_policy(path=policy_path)
+    run_manifest = _load_json(path=run_dir / "run_manifest.json")
     baseline_case_dir = (
         (Path(args.baselines_root).resolve() if args.baselines_root else BASELINES_DIR) / args.baseline / case.case_id
     )
@@ -100,6 +115,8 @@ def cmd_bless(args: argparse.Namespace) -> int:
         "case_id": case.case_id,
         "baseline": args.baseline,
         "source_run_dir": str(run_dir),
+        "source_run_id": str(run_manifest.get("run_id", "")),
+        "source_run_generated_at_utc": str(run_manifest.get("generated_at_utc", "")),
         "commit_sha": _git_head_sha(),
         "schema_versions": {
             "ledger_journal": "1.0.0",
@@ -107,6 +124,13 @@ def cmd_bless(args: argparse.Namespace) -> int:
             "exception_report": "1.0.0",
         },
         "harness_version": "0.1.0",
+        "policy_version": str(policy.get("version", "unknown")),
+        "policy_sha256": _sha256_file(path=policy_path),
+        "workflow_run_id": os.environ.get("GITHUB_RUN_ID", os.environ.get("COBOL_GUARD_WORKFLOW_RUN_ID", "")),
+        "environment": os.environ.get("COBOL_GUARD_ENVIRONMENT", "local"),
+        "provenance_ref": os.environ.get("COBOL_GUARD_PROVENANCE_REF", ""),
+        "signing_mode": os.environ.get("COBOL_GUARD_SIGNING_MODE", "ed25519-pem"),
+        "kms_key_version": os.environ.get("COBOL_GUARD_KMS_KEY_VERSION", ""),
         "change_class": args.change_class,
         "ticket": args.ticket,
         "risk_statement": args.risk_statement,
@@ -286,6 +310,31 @@ def cmd_sign_manifest(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_kms_sign_manifest(args: argparse.Namespace) -> int:
+    manifest_path = Path(args.manifest).resolve()
+    command_template = args.command_template or os.environ.get("COBOL_GUARD_KMS_SIGN_COMMAND_TEMPLATE", "")
+    if not command_template:
+        print(
+            "missing command template: pass --command-template or set COBOL_GUARD_KMS_SIGN_COMMAND_TEMPLATE",
+            file=sys.stderr,
+        )
+        return 2
+    signature = sign_file_via_command(
+        manifest_path=manifest_path,
+        key_id=args.key_id,
+        command_template=command_template,
+        algorithm=args.algorithm,
+    )
+    output_path = (
+        Path(args.output).resolve()
+        if args.output
+        else manifest_path.with_name(f"{manifest_path.stem}.{args.key_id}.sig.json")
+    )
+    write_signature(signature=signature, output_path=output_path)
+    print(output_path)
+    return 0
+
+
 def _missing_required_evidence(case_dir: Path, policy: dict[str, Any], signature_count: int) -> list[str]:
     required = [str(item) for item in policy.get("required_evidence", [])]
     mapping = {
@@ -362,16 +411,52 @@ def cmd_promote_baseline(args: argparse.Namespace) -> int:
 
 
 def cmd_evidence_pack(args: argparse.Namespace) -> int:
+    policy_path = Path(args.policy).resolve() if args.policy else (GOVERNANCE_DIR / "gate_policy.yml")
+    policy = load_policy(path=policy_path)
     output_dir = Path(args.output_dir).resolve() if args.output_dir else (Path.cwd() / "dist" / "evidence")
     result = build_evidence_pack(
         pack_id=args.pack_id,
         include_paths=[Path(item).resolve() if Path(item).is_absolute() else Path(item) for item in args.include],
         output_dir=output_dir,
+        retention_class=args.retention_class,
+        immutability_proof_ref=args.immutability_proof_ref,
+        provenance_ref=args.provenance_ref,
+        policy_version=str(policy.get("version", "unknown")),
+        environment=os.environ.get("COBOL_GUARD_ENVIRONMENT", "local"),
+        workflow_run_id=os.environ.get("GITHUB_RUN_ID", os.environ.get("COBOL_GUARD_WORKFLOW_RUN_ID", "")),
     )
     if args.output:
         write_json(path=Path(args.output).resolve(), payload=result)
     print(result["archive_path"])
     return 0
+
+
+def cmd_verify_evidence_pack(args: argparse.Namespace) -> int:
+    pack_dir = Path(args.pack_dir).resolve()
+    keys_dir = Path(args.keys_dir).resolve() if args.keys_dir else KEYS_DIR
+    signature_paths: list[Path] = []
+    if args.signature:
+        signature_paths = [Path(item).resolve() for item in args.signature]
+    else:
+        signature_paths = sorted(pack_dir.glob("evidence_manifest.*.sig.json"))
+    if not signature_paths:
+        print("no evidence signatures found (pass --signature or place evidence_manifest.*.sig.json in pack dir)", file=sys.stderr)
+        return 2
+
+    report = verify_evidence_pack(
+        pack_dir=pack_dir,
+        keys_dir=keys_dir,
+        signature_paths=signature_paths,
+        min_valid_signatures=args.min_valid,
+        required_key_ids={str(item) for item in args.require_key_id},
+    )
+    payload = json.dumps(report, indent=2, sort_keys=True)
+    print(payload)
+    if args.output:
+        output_path = Path(args.output).resolve()
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_text(payload + "\n", encoding="utf-8")
+    return 0 if report["passed"] else 2
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -401,6 +486,7 @@ def build_parser() -> argparse.ArgumentParser:
     bless_parser.add_argument("--author", default="TBD")
     bless_parser.add_argument("--out-root")
     bless_parser.add_argument("--baselines-root")
+    bless_parser.add_argument("--policy")
     bless_parser.add_argument("--chunk-size", type=int)
     bless_parser.set_defaults(func=cmd_bless)
 
@@ -443,6 +529,14 @@ def build_parser() -> argparse.ArgumentParser:
     sign_parser.add_argument("--output")
     sign_parser.set_defaults(func=cmd_sign_manifest)
 
+    kms_sign_parser = sub.add_parser("kms-sign-manifest", help="Sign a manifest using external KMS command")
+    kms_sign_parser.add_argument("--manifest", required=True)
+    kms_sign_parser.add_argument("--key-id", required=True)
+    kms_sign_parser.add_argument("--command-template")
+    kms_sign_parser.add_argument("--algorithm", default="kms-ed25519")
+    kms_sign_parser.add_argument("--output")
+    kms_sign_parser.set_defaults(func=cmd_kms_sign_manifest)
+
     promote_parser = sub.add_parser("promote-baseline", help="Promote candidate baseline to locked")
     promote_parser.add_argument("--manifest", required=True)
     promote_parser.add_argument("--signature", required=True, action="append")
@@ -455,8 +549,21 @@ def build_parser() -> argparse.ArgumentParser:
     evidence_parser.add_argument("--pack-id", required=True)
     evidence_parser.add_argument("--include", required=True, action="append")
     evidence_parser.add_argument("--output-dir", default="dist/evidence")
+    evidence_parser.add_argument("--policy")
+    evidence_parser.add_argument("--retention-class", default="standard")
+    evidence_parser.add_argument("--immutability-proof-ref", default="")
+    evidence_parser.add_argument("--provenance-ref", default="")
     evidence_parser.add_argument("--output")
     evidence_parser.set_defaults(func=cmd_evidence_pack)
+
+    evidence_verify_parser = sub.add_parser("verify-evidence-pack", help="Verify evidence pack integrity and signatures")
+    evidence_verify_parser.add_argument("--pack-dir", required=True)
+    evidence_verify_parser.add_argument("--keys-dir")
+    evidence_verify_parser.add_argument("--signature", action="append")
+    evidence_verify_parser.add_argument("--min-valid", type=int, default=2)
+    evidence_verify_parser.add_argument("--require-key-id", action="append", default=[])
+    evidence_verify_parser.add_argument("--output")
+    evidence_verify_parser.set_defaults(func=cmd_verify_evidence_pack)
     return parser
 
 

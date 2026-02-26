@@ -39,6 +39,12 @@ def build_evidence_pack(
     pack_id: str,
     include_paths: list[Path],
     output_dir: Path,
+    retention_class: str = "standard",
+    immutability_proof_ref: str = "",
+    provenance_ref: str = "",
+    policy_version: str = "",
+    environment: str = "",
+    workflow_run_id: str = "",
     repo_root: Path = REPO_ROOT,
 ) -> dict[str, str | int]:
     normalized_pack_id = str(pack_id).strip()
@@ -90,6 +96,12 @@ def build_evidence_pack(
     manifest = {
         "pack_id": normalized_pack_id,
         "generated_at_utc": datetime.now(UTC).isoformat(),
+        "retention_class": str(retention_class),
+        "immutability_proof_ref": str(immutability_proof_ref),
+        "provenance_ref": str(provenance_ref),
+        "policy_version": str(policy_version),
+        "environment": str(environment),
+        "workflow_run_id": str(workflow_run_id),
         "file_count": len(files),
         "files": files,
     }

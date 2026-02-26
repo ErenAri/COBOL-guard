@@ -8,6 +8,45 @@ on:
     - cron: "0 3 * * *"
 
 jobs:
+  release-gate-policy-check:
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install PyYAML
+        run: python -m pip install pyyaml
+
+      - name: Enforce Release-Gate KMS Default
+        run: |
+          python - <<'PY'
+          import sys
+          from pathlib import Path
+          import yaml
+
+          workflow = yaml.safe_load(Path(".github/workflows/release-gate.yml").read_text(encoding="utf-8"))
+          inputs = workflow.get("on", {}).get("workflow_dispatch", {}).get("inputs", {})
+          signing_mode = inputs.get("signing_mode")
+          if not signing_mode:
+              print("release-gate.yml missing workflow_dispatch.inputs.signing_mode", file=sys.stderr)
+              sys.exit(2)
+          default = signing_mode.get("default")
+          options = signing_mode.get("options", [])
+          if default != "kms-command":
+              print(f"release-gate signing_mode default must be 'kms-command', found: {default!r}", file=sys.stderr)
+              sys.exit(2)
+          if "kms-command" not in options:
+              print("release-gate signing_mode options must include 'kms-command'", file=sys.stderr)
+              sys.exit(2)
+          print("release-gate signing mode policy check passed")
+          PY
+
   test-and-gates:
     if: github.event_name != 'schedule'
     runs-on: ubuntu-latest

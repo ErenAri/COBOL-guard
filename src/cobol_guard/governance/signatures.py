@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import json
+import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -75,6 +76,45 @@ def sign_file(manifest_path: Path, private_key_path: Path, key_id: str) -> Signa
         key_id=key_id,
         algorithm="ed25519",
         signature_b64=base64.b64encode(signature).decode("ascii"),
+    )
+
+
+def sign_file_via_command(
+    manifest_path: Path,
+    key_id: str,
+    command_template: str,
+    algorithm: str = "kms-ed25519",
+) -> SignatureEnvelope:
+    if not command_template.strip():
+        raise ValueError("command_template is required for external signing")
+
+    payload = manifest_path.read_bytes()
+    payload_b64 = base64.b64encode(payload).decode("ascii")
+    command = command_template.format(
+        manifest_path=str(manifest_path),
+        key_id=key_id,
+        payload_b64=payload_b64,
+    )
+    completed = subprocess.run(command, shell=True, capture_output=True, text=True)
+    if completed.returncode != 0:
+        raise RuntimeError(
+            "external signing command failed "
+            f"(exit={completed.returncode}): stdout={completed.stdout.strip()} stderr={completed.stderr.strip()}"
+        )
+
+    stdout_lines = [line.strip() for line in completed.stdout.splitlines() if line.strip()]
+    if not stdout_lines:
+        raise RuntimeError("external signing command produced no signature output")
+    signature_b64 = stdout_lines[-1]
+    try:
+        base64.b64decode(signature_b64.encode("ascii"), validate=True)
+    except Exception as exc:
+        raise RuntimeError("external signing command output is not valid base64 signature") from exc
+
+    return SignatureEnvelope(
+        key_id=key_id,
+        algorithm=algorithm,
+        signature_b64=signature_b64,
     )
 
 

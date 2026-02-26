@@ -15,6 +15,14 @@ on:
         options:
           - cobol-executable
           - python-reference
+      signing_mode:
+        description: "Signing mode for release manifests"
+        required: true
+        default: "kms-command"
+        type: choice
+        options:
+          - kms-command
+          - pem-secret
       change_class:
         description: "Change class for baseline rationale"
         required: true
@@ -32,10 +40,27 @@ on:
         description: "Evidence pack id"
         required: true
         default: "v0.1"
+      kms_key_version:
+        description: "Optional KMS key version metadata"
+        required: false
+        default: ""
+      immutable_bucket:
+        description: "Immutable object-lock bucket name"
+        required: false
+        default: ""
+      immutable_prefix:
+        description: "Immutable bucket key prefix"
+        required: false
+        default: "golden-evidence"
+      immutable_retention_days:
+        description: "Object lock retention days"
+        required: false
+        default: "365"
 
 permissions:
   contents: read
   actions: read
+  id-token: write
 
 jobs:
   release-gate:
@@ -85,12 +110,56 @@ jobs:
           sudo apt-get install -y gnucobol
           cobc --version
 
+      - name: Configure AWS Credentials (OIDC)
+        if: ${{ secrets.AWS_ROLE_TO_ASSUME != '' && secrets.AWS_REGION != '' }}
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Ensure AWS CLI
+        run: |
+          if ! command -v aws >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install -y awscli
+          fi
+          aws --version
+
+      - name: Resolve Immutable Storage Target
+        id: immutable
+        env:
+          INPUT_BUCKET: ${{ inputs.immutable_bucket }}
+          SECRET_BUCKET: ${{ secrets.IMMUTABLE_EVIDENCE_BUCKET }}
+          INPUT_PREFIX: ${{ inputs.immutable_prefix }}
+          SECRET_PREFIX: ${{ secrets.IMMUTABLE_EVIDENCE_PREFIX }}
+        run: |
+          BUCKET="${INPUT_BUCKET:-$SECRET_BUCKET}"
+          PREFIX="${INPUT_PREFIX:-$SECRET_PREFIX}"
+          if [ -z "$BUCKET" ]; then
+            echo "Missing immutable bucket: set workflow input immutable_bucket or secret IMMUTABLE_EVIDENCE_BUCKET."
+            exit 2
+          fi
+          if [ -z "$PREFIX" ]; then
+            PREFIX="golden-evidence"
+          fi
+          KEY="${PREFIX}/${GITHUB_SHA}/${{ inputs.evidence_pack_id }}.zip"
+          URI="s3://${BUCKET}/${KEY}"
+          echo "bucket=$BUCKET" >> "$GITHUB_OUTPUT"
+          echo "key=$KEY" >> "$GITHUB_OUTPUT"
+          echo "uri=$URI" >> "$GITHUB_OUTPUT"
+
       - name: Init Release Evidence Directory
         run: mkdir -p release-evidence
 
       - name: Run Release Verification And Bless Candidate Baseline
         id: preflight
         run: |
+          export COBOL_GUARD_SIGNING_MODE="${{ inputs.signing_mode }}"
+          export COBOL_GUARD_KMS_KEY_VERSION="${{ inputs.kms_key_version }}"
+          export COBOL_GUARD_ENVIRONMENT="production"
+          export COBOL_GUARD_PROVENANCE_REF="github://${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          export COBOL_GUARD_WORKFLOW_RUN_ID="${GITHUB_RUN_ID}"
+
           if [ "${{ inputs.oracle_mode }}" = "cobol-executable" ]; then
             export COBOL_GUARD_ORACLE_MODE=cobol-executable
             export COBOL_GUARD_COBOL_SOURCE=programs/v1/LEDGER01.cbl
@@ -119,16 +188,25 @@ jobs:
 
           echo "baseline_dir=$BLESS_DIR" >> "$GITHUB_OUTPUT"
 
-      - name: Materialize Release Signer Keys
+      - name: Prepare Signing Material
+        env:
+          SIGN_CMD_A: ${{ secrets.RELEASE_SIGNER_A_KMS_SIGN_COMMAND }}
+          SIGN_CMD_B: ${{ secrets.RELEASE_SIGNER_B_KMS_SIGN_COMMAND }}
         run: |
-          if [ -z "${{ secrets.RELEASE_SIGNER_A_PRIVATE_KEY_PEM }}" ] || [ -z "${{ secrets.RELEASE_SIGNER_B_PRIVATE_KEY_PEM }}" ]; then
-            echo "Missing RELEASE_SIGNER_A_PRIVATE_KEY_PEM or RELEASE_SIGNER_B_PRIVATE_KEY_PEM secret."
-            exit 2
+          if [ "${{ inputs.signing_mode }}" = "pem-secret" ]; then
+            if [ -z "${{ secrets.RELEASE_SIGNER_A_PRIVATE_KEY_PEM }}" ] || [ -z "${{ secrets.RELEASE_SIGNER_B_PRIVATE_KEY_PEM }}" ]; then
+              echo "Missing RELEASE_SIGNER_A_PRIVATE_KEY_PEM or RELEASE_SIGNER_B_PRIVATE_KEY_PEM secret."
+              exit 2
+            fi
+            printf "%s\n" "${{ secrets.RELEASE_SIGNER_A_PRIVATE_KEY_PEM }}" > "$RUNNER_TEMP/release_signer_a.private.pem"
+            printf "%s\n" "${{ secrets.RELEASE_SIGNER_B_PRIVATE_KEY_PEM }}" > "$RUNNER_TEMP/release_signer_b.private.pem"
+            chmod 600 "$RUNNER_TEMP/release_signer_a.private.pem" "$RUNNER_TEMP/release_signer_b.private.pem"
+          else
+            if [ -z "$SIGN_CMD_A" ] || [ -z "$SIGN_CMD_B" ]; then
+              echo "Missing RELEASE_SIGNER_A_KMS_SIGN_COMMAND or RELEASE_SIGNER_B_KMS_SIGN_COMMAND secret for kms-command mode."
+              exit 2
+            fi
           fi
-
-          printf "%s\n" "${{ secrets.RELEASE_SIGNER_A_PRIVATE_KEY_PEM }}" > "$RUNNER_TEMP/release_signer_a.private.pem"
-          printf "%s\n" "${{ secrets.RELEASE_SIGNER_B_PRIVATE_KEY_PEM }}" > "$RUNNER_TEMP/release_signer_b.private.pem"
-          chmod 600 "$RUNNER_TEMP/release_signer_a.private.pem" "$RUNNER_TEMP/release_signer_b.private.pem"
 
           if [ ! -f governance/keys/release_signer_a.public.pem ]; then
             if [ -z "${{ secrets.RELEASE_SIGNER_A_PUBLIC_KEY_PEM }}" ]; then
@@ -147,13 +225,21 @@ jobs:
 
       - name: Sign Baseline Manifest
         id: signatures
+        env:
+          SIGN_CMD_A: ${{ secrets.RELEASE_SIGNER_A_KMS_SIGN_COMMAND }}
+          SIGN_CMD_B: ${{ secrets.RELEASE_SIGNER_B_KMS_SIGN_COMMAND }}
         run: |
           MANIFEST_PATH="${{ steps.preflight.outputs.baseline_dir }}/baseline_manifest.json"
           SIG_A="${{ steps.preflight.outputs.baseline_dir }}/baseline_manifest.release_signer_a.sig.json"
           SIG_B="${{ steps.preflight.outputs.baseline_dir }}/baseline_manifest.release_signer_b.sig.json"
 
-          python -m cobol_guard.harness.cli sign-manifest --manifest "$MANIFEST_PATH" --key "$RUNNER_TEMP/release_signer_a.private.pem" --key-id release_signer_a --output "$SIG_A"
-          python -m cobol_guard.harness.cli sign-manifest --manifest "$MANIFEST_PATH" --key "$RUNNER_TEMP/release_signer_b.private.pem" --key-id release_signer_b --output "$SIG_B"
+          if [ "${{ inputs.signing_mode }}" = "pem-secret" ]; then
+            python -m cobol_guard.harness.cli sign-manifest --manifest "$MANIFEST_PATH" --key "$RUNNER_TEMP/release_signer_a.private.pem" --key-id release_signer_a --output "$SIG_A"
+            python -m cobol_guard.harness.cli sign-manifest --manifest "$MANIFEST_PATH" --key "$RUNNER_TEMP/release_signer_b.private.pem" --key-id release_signer_b --output "$SIG_B"
+          else
+            python -m cobol_guard.harness.cli kms-sign-manifest --manifest "$MANIFEST_PATH" --key-id release_signer_a --command-template "$SIGN_CMD_A" --output "$SIG_A"
+            python -m cobol_guard.harness.cli kms-sign-manifest --manifest "$MANIFEST_PATH" --key-id release_signer_b --command-template "$SIGN_CMD_B" --output "$SIG_B"
+          fi
 
           mkdir -p release-evidence/signatures
           cp "$SIG_A" release-evidence/signatures/
@@ -187,25 +273,48 @@ jobs:
 
       - name: Build And Sign Evidence Pack
         id: pack
+        env:
+          SIGN_CMD_A: ${{ secrets.RELEASE_SIGNER_A_KMS_SIGN_COMMAND }}
+          SIGN_CMD_B: ${{ secrets.RELEASE_SIGNER_B_KMS_SIGN_COMMAND }}
         run: |
           PACK_ID="${{ inputs.evidence_pack_id }}"
-          python -m cobol_guard.harness.cli evidence-pack --pack-id "$PACK_ID" --include release-evidence --include SPEC.md --include governance/gate_policy.yml --include schema-registry --output-dir dist/evidence
+          python -m cobol_guard.harness.cli evidence-pack --pack-id "$PACK_ID" --include release-evidence --include SPEC.md --include governance/gate_policy.yml --include schema-registry --output-dir dist/evidence --retention-class "regulated-7y" --immutability-proof-ref "${{ steps.immutable.outputs.uri }}" --provenance-ref "github://${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
 
           PACK_MANIFEST="dist/evidence/${PACK_ID}/evidence_manifest.json"
-          python -m cobol_guard.harness.cli sign-manifest --manifest "$PACK_MANIFEST" --key "$RUNNER_TEMP/release_signer_a.private.pem" --key-id release_signer_a --output "dist/evidence/${PACK_ID}/evidence_manifest.release_signer_a.sig.json"
-          python -m cobol_guard.harness.cli sign-manifest --manifest "$PACK_MANIFEST" --key "$RUNNER_TEMP/release_signer_b.private.pem" --key-id release_signer_b --output "dist/evidence/${PACK_ID}/evidence_manifest.release_signer_b.sig.json"
+          if [ "${{ inputs.signing_mode }}" = "pem-secret" ]; then
+            python -m cobol_guard.harness.cli sign-manifest --manifest "$PACK_MANIFEST" --key "$RUNNER_TEMP/release_signer_a.private.pem" --key-id release_signer_a --output "dist/evidence/${PACK_ID}/evidence_manifest.release_signer_a.sig.json"
+            python -m cobol_guard.harness.cli sign-manifest --manifest "$PACK_MANIFEST" --key "$RUNNER_TEMP/release_signer_b.private.pem" --key-id release_signer_b --output "dist/evidence/${PACK_ID}/evidence_manifest.release_signer_b.sig.json"
+          else
+            python -m cobol_guard.harness.cli kms-sign-manifest --manifest "$PACK_MANIFEST" --key-id release_signer_a --command-template "$SIGN_CMD_A" --output "dist/evidence/${PACK_ID}/evidence_manifest.release_signer_a.sig.json"
+            python -m cobol_guard.harness.cli kms-sign-manifest --manifest "$PACK_MANIFEST" --key-id release_signer_b --command-template "$SIGN_CMD_B" --output "dist/evidence/${PACK_ID}/evidence_manifest.release_signer_b.sig.json"
+          fi
 
-          python tools/verify_signed_manifest.py \
-            --manifest "$PACK_MANIFEST" \
-            --signature "dist/evidence/${PACK_ID}/evidence_manifest.release_signer_a.sig.json" \
-            --signature "dist/evidence/${PACK_ID}/evidence_manifest.release_signer_b.sig.json" \
-            --keys-dir governance/keys \
-            --min-valid 2 \
-            --require-key-id release_signer_a \
-            --require-key-id release_signer_b \
-            --output release-evidence/evidence_pack_signature_verification.json
+          python -m cobol_guard.harness.cli verify-evidence-pack --pack-dir "dist/evidence/${PACK_ID}" --keys-dir governance/keys --signature "dist/evidence/${PACK_ID}/evidence_manifest.release_signer_a.sig.json" --signature "dist/evidence/${PACK_ID}/evidence_manifest.release_signer_b.sig.json" --min-valid 2 --require-key-id release_signer_a --require-key-id release_signer_b --output release-evidence/evidence_pack_signature_verification.json
 
           echo "pack_id=$PACK_ID" >> "$GITHUB_OUTPUT"
+
+      - name: Upload Evidence Pack To Immutable Bucket
+        id: immutable_upload
+        env:
+          BUCKET: ${{ steps.immutable.outputs.bucket }}
+          KEY: ${{ steps.immutable.outputs.key }}
+          URI: ${{ steps.immutable.outputs.uri }}
+          RETENTION_DAYS: ${{ inputs.immutable_retention_days }}
+        run: |
+          RETENTION_UNTIL=$(date -u -d "+${RETENTION_DAYS} days" '+%Y-%m-%dT%H:%M:%SZ')
+          mkdir -p release-evidence/immutable
+          aws s3api put-object \
+            --bucket "$BUCKET" \
+            --key "$KEY" \
+            --body "dist/evidence/${{ steps.pack.outputs.pack_id }}.zip" \
+            --object-lock-mode GOVERNANCE \
+            --object-lock-retain-until-date "$RETENTION_UNTIL" \
+            > release-evidence/immutable/upload_result.json
+
+          VERSION_ID=$(python -c "import json;print(json.load(open('release-evidence/immutable/upload_result.json',encoding='utf-8')).get('VersionId',''))")
+          ETAG=$(python -c "import json;print(json.load(open('release-evidence/immutable/upload_result.json',encoding='utf-8')).get('ETag',''))")
+          python -c "import json; p={'immutable_ref':'${URI}','bucket':'${BUCKET}','key':'${KEY}','version_id':'${VERSION_ID}','etag':'${ETAG}','retention_days':'${RETENTION_DAYS}','retention_until_utc':'${RETENTION_UNTIL}'}; open('release-evidence/immutable/immutability_proof.json','w',encoding='utf-8').write(json.dumps(p,indent=2,sort_keys=True)+'\\n')"
+          echo "immutable_ref=$URI" >> "$GITHUB_OUTPUT"
 
       - name: Upload Release Evidence Pack
         uses: actions/upload-artifact@v4

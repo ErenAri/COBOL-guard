@@ -165,6 +165,7 @@ Above threshold requires:
 2. two valid Ed25519 signatures
 3. approver public keys present in `governance/keys/`
 4. mandatory rationale metadata
+5. signing mode recorded (`ed25519-pem` or `kms-command`)
 
 Manifest must include:
 - commit SHA
@@ -175,6 +176,11 @@ Manifest must include:
 - change class
 - ticket
 - risk statement
+- policy version and hash
+- workflow run id
+- environment
+- provenance ref
+- KMS key version metadata when `kms-command` mode is used
 
 ## 13. Benchmark and Performance Gates
 
@@ -183,3 +189,18 @@ Manifest must include:
 - batch throughput (`records_processed`, `duration_seconds`)
 - restart resilience (`restart_rework_chunks`)
 - Verify can enforce these gates when benchmark evidence is supplied.
+
+## 14. Evidence Pack Integrity
+
+- Evidence packs include:
+- retention class
+- immutability proof reference
+- provenance reference
+- policy version
+- environment and workflow run id
+
+- `verify-evidence-pack` validates:
+1. manifest signatures against required signer ids
+2. minimum valid signature count
+3. every listed file hash/size
+4. unexpected content files

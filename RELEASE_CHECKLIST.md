@@ -5,7 +5,16 @@ Use this checklist for each promoted baseline release (for example `v0.1`).
 ## 1) Prerequisites
 
 - [ ] `CI` workflow is green for the exact commit being released.
-- [ ] Release signer private key secrets are configured in GitHub:
+- [ ] Release signer command secrets are configured in GitHub (default signing mode):
+  - [ ] `RELEASE_SIGNER_A_KMS_SIGN_COMMAND`
+  - [ ] `RELEASE_SIGNER_B_KMS_SIGN_COMMAND`
+- [ ] Immutable evidence storage is configured:
+  - [ ] `IMMUTABLE_EVIDENCE_BUCKET`
+  - [ ] optional `IMMUTABLE_EVIDENCE_PREFIX`
+- [ ] OIDC cloud credentials are configured:
+  - [ ] `AWS_ROLE_TO_ASSUME`
+  - [ ] `AWS_REGION`
+- [ ] If using `pem-secret` signing mode, private key secrets are configured:
   - [ ] `RELEASE_SIGNER_A_PRIVATE_KEY_PEM`
   - [ ] `RELEASE_SIGNER_B_PRIVATE_KEY_PEM`
 - [ ] Public keys are available for signature verification:
@@ -17,11 +26,14 @@ Use this checklist for each promoted baseline release (for example `v0.1`).
 - [ ] Trigger `.github/workflows/release-gate.yml` manually with inputs:
   - [ ] `case_path` (default: `fixtures/cases/basic.yml`)
   - [ ] `oracle_mode` (recommended: `cobol-executable`)
+  - [ ] `signing_mode` (recommended: `kms-command`)
   - [ ] `change_class`
   - [ ] `ticket`
   - [ ] `risk_statement`
   - [ ] `author`
   - [ ] `evidence_pack_id` (example: `v0.1`)
+  - [ ] `kms_key_version` (optional metadata)
+  - [ ] `immutable_bucket` or secret fallback is set
 
 ## 3) Confirm Promotion
 
@@ -35,11 +47,12 @@ Use this checklist for each promoted baseline release (for example `v0.1`).
 ## 4) Verify Evidence Pack Signatures
 
 - [ ] Download release artifact `release-evidence-<pack_id>` from workflow run.
-- [ ] Verify evidence manifest signatures:
+- [ ] Optional automation: `python tools/run_release_gate.py --ticket ... --risk-statement ... --author ... --evidence-pack-id <pack_id>`
+- [ ] Verify evidence-pack integrity + signatures:
 
 ```bash
-python tools/verify_signed_manifest.py \
-  --manifest dist/evidence/<pack_id>/evidence_manifest.json \
+python -m cobol_guard.harness.cli verify-evidence-pack \
+  --pack-dir dist/evidence/<pack_id> \
   --signature dist/evidence/<pack_id>/evidence_manifest.release_signer_a.sig.json \
   --signature dist/evidence/<pack_id>/evidence_manifest.release_signer_b.sig.json \
   --keys-dir governance/keys \
@@ -49,6 +62,7 @@ python tools/verify_signed_manifest.py \
 ```
 
 - [ ] Verification report indicates `"passed": true`.
+- [ ] Immutable upload proof exists at `release-evidence/immutable/immutability_proof.json`.
 
 ## 5) Finalize Release
 

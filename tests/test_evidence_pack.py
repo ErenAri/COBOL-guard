@@ -19,6 +19,12 @@ def test_build_evidence_pack_creates_manifest_and_archive(tmp_path: Path) -> Non
         pack_id="v0.1",
         include_paths=[Path("SPEC.md"), Path("evidence-input")],
         output_dir=output_dir,
+        retention_class="regulated-7y",
+        immutability_proof_ref="s3://bucket/object-lock-ref",
+        provenance_ref="gha://run/12345",
+        policy_version="1",
+        environment="staging",
+        workflow_run_id="12345",
         repo_root=repo_root,
     )
 
@@ -30,6 +36,12 @@ def test_build_evidence_pack_creates_manifest_and_archive(tmp_path: Path) -> Non
 
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     assert manifest["pack_id"] == "v0.1"
+    assert manifest["retention_class"] == "regulated-7y"
+    assert manifest["immutability_proof_ref"] == "s3://bucket/object-lock-ref"
+    assert manifest["provenance_ref"] == "gha://run/12345"
+    assert manifest["policy_version"] == "1"
+    assert manifest["environment"] == "staging"
+    assert manifest["workflow_run_id"] == "12345"
     assert manifest["file_count"] == 3
     paths = [item["path"] for item in manifest["files"]]
     assert "SPEC.md" in paths
