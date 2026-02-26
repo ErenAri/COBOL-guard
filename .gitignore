@@ -10,3 +10,5 @@ baselines/
 *.sig.json
 *.private.pem
 governance/keys/*.public.pem
+!governance/keys/release_signer_a.public.pem
+!governance/keys/release_signer_b.public.pem

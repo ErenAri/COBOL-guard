@@ -25,6 +25,9 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -e .[dev]
 
+      - name: Init Evidence Directory
+        run: mkdir -p ci-evidence/test-and-gates
+
       - name: Unit Tests
         run: pytest -q
 
@@ -34,6 +37,11 @@ jobs:
           V2_DIR=$(python -m cobol_guard.harness.cli run --target v2 --case fixtures/cases/basic.yml)
           python -m cobol_guard.harness.cli diff --baseline-dir "$ORACLE_DIR" --candidate-dir "$V2_DIR"
           python -m cobol_guard.harness.cli verify --baseline-dir "$ORACLE_DIR" --candidate-dir "$V2_DIR" --determinism-case fixtures/cases/basic.yml --adapter-parity-case fixtures/cases/basic.yml
+          mkdir -p ci-evidence/test-and-gates/basic
+          cp "$ORACLE_DIR"/run_manifest.json ci-evidence/test-and-gates/basic/oracle_run_manifest.json
+          cp "$V2_DIR"/run_manifest.json ci-evidence/test-and-gates/basic/v2_run_manifest.json
+          cp "$V2_DIR"/diff_report.json ci-evidence/test-and-gates/basic/diff_report.json
+          cp "$V2_DIR"/verify_report.json ci-evidence/test-and-gates/basic/verify_report.json
 
       - name: Adversarial Verify
         run: |
@@ -41,6 +49,11 @@ jobs:
           V2_ADV=$(python -m cobol_guard.harness.cli run --target v2 --case fixtures/cases/adversarial.yml)
           python -m cobol_guard.harness.cli diff --baseline-dir "$ORACLE_ADV" --candidate-dir "$V2_ADV"
           python -m cobol_guard.harness.cli verify --baseline-dir "$ORACLE_ADV" --candidate-dir "$V2_ADV"
+          mkdir -p ci-evidence/test-and-gates/adversarial
+          cp "$ORACLE_ADV"/run_manifest.json ci-evidence/test-and-gates/adversarial/oracle_run_manifest.json
+          cp "$V2_ADV"/run_manifest.json ci-evidence/test-and-gates/adversarial/v2_run_manifest.json
+          cp "$V2_ADV"/diff_report.json ci-evidence/test-and-gates/adversarial/diff_report.json
+          cp "$V2_ADV"/verify_report.json ci-evidence/test-and-gates/adversarial/verify_report.json
 
       - name: Adversarial Restart Verify
         run: |
@@ -57,6 +70,11 @@ jobs:
           python -m cobol_guard.harness.cli diff --baseline-dir "$ORACLE_RESTART" --candidate-dir "$V2_RESTART"
           python -m cobol_guard.harness.cli verify --baseline-dir "$ORACLE_RESTART" --candidate-dir "$V2_RESTART"
           python -c "import json; m=json.load(open('${V2_RESTART}/run_manifest.json')); r=m['batch_restart']; assert r['reworked_chunks'] <= 1, r"
+          mkdir -p ci-evidence/test-and-gates/adversarial_restart
+          cp "$ORACLE_RESTART"/run_manifest.json ci-evidence/test-and-gates/adversarial_restart/oracle_run_manifest.json
+          cp "$V2_RESTART"/run_manifest.json ci-evidence/test-and-gates/adversarial_restart/v2_run_manifest.json
+          cp "$V2_RESTART"/diff_report.json ci-evidence/test-and-gates/adversarial_restart/diff_report.json
+          cp "$V2_RESTART"/verify_report.json ci-evidence/test-and-gates/adversarial_restart/verify_report.json
 
       - name: Governance Promotion
         run: |
@@ -66,6 +84,14 @@ jobs:
           python -m cobol_guard.harness.cli sign-manifest --manifest baselines/candidate/basic/baseline_manifest.json --key governance/keys/ci_approver_a.private.pem
           python -m cobol_guard.harness.cli sign-manifest --manifest baselines/candidate/basic/baseline_manifest.json --key governance/keys/ci_approver_b.private.pem
           python -m cobol_guard.harness.cli promote-baseline --manifest baselines/candidate/basic/baseline_manifest.json --signature baselines/candidate/basic/baseline_manifest.ci_approver_a.sig.json --signature baselines/candidate/basic/baseline_manifest.ci_approver_b.sig.json
+
+      - name: Upload Evidence (Test And Gates)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: evidence-test-and-gates
+          path: ci-evidence/test-and-gates
+          if-no-files-found: warn
 
   cobol-executable-parity:
     if: github.event_name != 'schedule'
@@ -90,6 +116,9 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -e .[dev]
 
+      - name: Init Evidence Directory
+        run: mkdir -p ci-evidence/cobol-executable
+
       - name: COBOL Executable Parity Verify
         env:
           COBOL_GUARD_ORACLE_MODE: cobol-executable
@@ -100,6 +129,11 @@ jobs:
           V2_DIR=$(python -m cobol_guard.harness.cli run --target v2 --case fixtures/cases/basic.yml)
           python -m cobol_guard.harness.cli diff --baseline-dir "$ORACLE_DIR" --candidate-dir "$V2_DIR"
           python -m cobol_guard.harness.cli verify --baseline-dir "$ORACLE_DIR" --candidate-dir "$V2_DIR"
+          mkdir -p ci-evidence/cobol-executable/basic
+          cp "$ORACLE_DIR"/run_manifest.json ci-evidence/cobol-executable/basic/oracle_run_manifest.json
+          cp "$V2_DIR"/run_manifest.json ci-evidence/cobol-executable/basic/v2_run_manifest.json
+          cp "$V2_DIR"/diff_report.json ci-evidence/cobol-executable/basic/diff_report.json
+          cp "$V2_DIR"/verify_report.json ci-evidence/cobol-executable/basic/verify_report.json
 
       - name: COBOL Executable Adversarial Parity Verify
         env:
@@ -111,6 +145,67 @@ jobs:
           V2_ADV=$(python -m cobol_guard.harness.cli run --target v2 --case fixtures/cases/adversarial.yml)
           python -m cobol_guard.harness.cli diff --baseline-dir "$ORACLE_ADV" --candidate-dir "$V2_ADV"
           python -m cobol_guard.harness.cli verify --baseline-dir "$ORACLE_ADV" --candidate-dir "$V2_ADV"
+          mkdir -p ci-evidence/cobol-executable/adversarial
+          cp "$ORACLE_ADV"/run_manifest.json ci-evidence/cobol-executable/adversarial/oracle_run_manifest.json
+          cp "$V2_ADV"/run_manifest.json ci-evidence/cobol-executable/adversarial/v2_run_manifest.json
+          cp "$V2_ADV"/diff_report.json ci-evidence/cobol-executable/adversarial/diff_report.json
+          cp "$V2_ADV"/verify_report.json ci-evidence/cobol-executable/adversarial/verify_report.json
+
+      - name: COBOL Executable Determinism Gate
+        env:
+          COBOL_GUARD_ORACLE_MODE: cobol-executable
+          COBOL_GUARD_COBOL_SOURCE: programs/v1/LEDGER01.cbl
+          COBOL_GUARD_COBOL_BUILD_DIR: build/cobol
+        run: |
+          python - <<'PY'
+          import json
+          import subprocess
+          import sys
+          from pathlib import Path
+
+          case_path = "fixtures/cases/basic.yml"
+          runs = []
+          hashes = []
+          output_dir = Path("ci-evidence/cobol-executable/determinism")
+          output_dir.mkdir(parents=True, exist_ok=True)
+
+          for _ in range(5):
+              run_dir = subprocess.check_output(
+                  ["python", "-m", "cobol_guard.harness.cli", "run", "--target", "oracle", "--case", case_path],
+                  text=True,
+              ).strip()
+              manifest = json.loads((Path(run_dir) / "run_manifest.json").read_text(encoding="utf-8"))
+              triplet = (
+                  manifest["artifact_hashes"]["ledger_journal.dat"],
+                  manifest["artifact_hashes"]["reconcile_totals.dat"],
+                  manifest["artifact_hashes"]["exception_report.dat"],
+              )
+              runs.append(run_dir)
+              hashes.append(triplet)
+
+          unique_hashes = sorted({"|".join(item) for item in hashes})
+          summary = {
+              "case": case_path,
+              "repeats": len(runs),
+              "run_dirs": runs,
+              "hash_triplets": [list(item) for item in hashes],
+              "unique_hash_triplets": unique_hashes,
+              "passed": len(unique_hashes) == 1,
+          }
+          (output_dir / "determinism_summary.json").write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+          if len(unique_hashes) != 1:
+              print("cobol_executable_determinism_failed", file=sys.stderr)
+              sys.exit(2)
+          PY
+
+      - name: Upload Evidence (COBOL Executable)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: evidence-cobol-executable
+          path: ci-evidence/cobol-executable
+          if-no-files-found: warn
 
   performance-gates:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
@@ -130,6 +225,17 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -e .[dev]
 
+      - name: Init Evidence Directory
+        run: mkdir -p ci-evidence/performance
+
       - name: Run Full Benchmark And Assert Gates
         run: |
-          python -m cobol_guard.harness.cli benchmark --case fixtures/cases/basic.yml --profile benchmark/profile.yml --assert-gates
+          python -m cobol_guard.harness.cli benchmark --case fixtures/cases/basic.yml --profile benchmark/profile.yml --output ci-evidence/performance/benchmark_report.json --assert-gates
+
+      - name: Upload Evidence (Performance)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: evidence-performance
+          path: ci-evidence/performance
+          if-no-files-found: warn

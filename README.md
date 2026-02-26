@@ -111,6 +111,35 @@ python -m cobol_guard.harness.cli promote-baseline \
   --signature baselines/candidate/basic/baseline_manifest.approver_b.sig.json
 ```
 
+Build a signed evidence pack archive:
+```bash
+python -m cobol_guard.harness.cli evidence-pack --pack-id v0.1 --include SPEC.md --include governance/gate_policy.yml --include schema-registry --include runs/<v2-run> --output-dir dist/evidence
+python -m cobol_guard.harness.cli sign-manifest --manifest dist/evidence/v0.1/evidence_manifest.json --key governance/keys/approver_a.private.pem
+python -m cobol_guard.harness.cli sign-manifest --manifest dist/evidence/v0.1/evidence_manifest.json --key governance/keys/approver_b.private.pem
+```
+
+Use `.github/workflows/release-gate.yml` for controlled promotion from CI:
+- requires a successful `CI` workflow run on the commit
+- re-runs release verification
+- enforces two valid Ed25519 signatures
+- promotes candidate baseline only after gates pass
+- builds and uploads a signed evidence pack artifact
+- required secrets: `RELEASE_SIGNER_A_PRIVATE_KEY_PEM`, `RELEASE_SIGNER_B_PRIVATE_KEY_PEM`
+- optional fallback secrets if public keys are not committed: `RELEASE_SIGNER_A_PUBLIC_KEY_PEM`, `RELEASE_SIGNER_B_PUBLIC_KEY_PEM`
+- standard tracked public keys: `governance/keys/release_signer_a.public.pem`, `governance/keys/release_signer_b.public.pem`
+
+Verify any signed manifest (baseline or evidence pack):
+```bash
+python tools/verify_signed_manifest.py \
+  --manifest dist/evidence/v0.1/evidence_manifest.json \
+  --signature dist/evidence/v0.1/evidence_manifest.release_signer_a.sig.json \
+  --signature dist/evidence/v0.1/evidence_manifest.release_signer_b.sig.json \
+  --keys-dir governance/keys \
+  --min-valid 2 \
+  --require-key-id release_signer_a \
+  --require-key-id release_signer_b
+```
+
 ## Repository Layout
 
 - `SPEC.md`: system contract and control policy narrative.
@@ -120,5 +149,7 @@ python -m cobol_guard.harness.cli promote-baseline \
 - `fixtures/`: deterministic sample inputs and case definitions.
 - `src/cobol_guard/`: harness, candidate service, oracle adapter, governance logic.
 - `.github/workflows/ci.yml`: test and gate automation.
-- `.github/workflows/ci.yml` also contains scheduled/manual performance gate runs and a GnuCOBOL `cobol-executable` parity job (basic + adversarial cases).
+- `.github/workflows/ci.yml` also contains scheduled/manual performance gate runs, uploads CI evidence artifacts (`run_manifest`/`diff_report`/`verify_report`/benchmark report), and enforces a GnuCOBOL `cobol-executable` parity + determinism gate.
+- `.github/workflows/release-gate.yml`: gated baseline promotion workflow with CI-success precondition, dual-signature enforcement, and signed evidence pack export.
+- `RELEASE_CHECKLIST.md`: runbook for release promotion, evidence verification, and release publication.
 - `tests/`: core behavioral and control tests.

@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from cobol_guard.constants import BASELINES_DIR, GOVERNANCE_DIR, KEYS_DIR, RUNS_DIR
+from cobol_guard.governance.evidence_pack import build_evidence_pack
 from cobol_guard.governance.policy import evaluate_gate, load_policy
 from cobol_guard.governance.signatures import (
     generate_ed25519_keypair,
@@ -360,6 +361,19 @@ def cmd_promote_baseline(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_evidence_pack(args: argparse.Namespace) -> int:
+    output_dir = Path(args.output_dir).resolve() if args.output_dir else (Path.cwd() / "dist" / "evidence")
+    result = build_evidence_pack(
+        pack_id=args.pack_id,
+        include_paths=[Path(item).resolve() if Path(item).is_absolute() else Path(item) for item in args.include],
+        output_dir=output_dir,
+    )
+    if args.output:
+        write_json(path=Path(args.output).resolve(), payload=result)
+    print(result["archive_path"])
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="gm", description="COBOL Guard harness CLI")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -436,6 +450,13 @@ def build_parser() -> argparse.ArgumentParser:
     promote_parser.add_argument("--keys-dir")
     promote_parser.add_argument("--baselines-root")
     promote_parser.set_defaults(func=cmd_promote_baseline)
+
+    evidence_parser = sub.add_parser("evidence-pack", help="Build evidence pack archive")
+    evidence_parser.add_argument("--pack-id", required=True)
+    evidence_parser.add_argument("--include", required=True, action="append")
+    evidence_parser.add_argument("--output-dir", default="dist/evidence")
+    evidence_parser.add_argument("--output")
+    evidence_parser.set_defaults(func=cmd_evidence_pack)
     return parser
 
 
