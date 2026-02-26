@@ -65,6 +65,9 @@ permissions:
 jobs:
   release-gate:
     runs-on: ubuntu-latest
+    env:
+      AWS_ROLE_TO_ASSUME: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+      AWS_REGION: ${{ secrets.AWS_REGION }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -111,11 +114,11 @@ jobs:
           cobc --version
 
       - name: Configure AWS Credentials (OIDC)
-        if: ${{ secrets.AWS_ROLE_TO_ASSUME != '' && secrets.AWS_REGION != '' }}
+        if: ${{ env.AWS_ROLE_TO_ASSUME != '' && env.AWS_REGION != '' }}
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
-          aws-region: ${{ secrets.AWS_REGION }}
+          role-to-assume: ${{ env.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ env.AWS_REGION }}
 
       - name: Ensure AWS CLI
         run: |
