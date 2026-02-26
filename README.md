@@ -8,6 +8,55 @@ The repository enforces deterministic execution, schema-governed canonicalizatio
 
 Note: on Windows PowerShell, `gm` may resolve to `Get-Member`. Use `python -m cobol_guard.harness.cli ...` commands.
 
+## System Diagrams
+
+### Behavioral Equivalence Harness
+
+```mermaid
+flowchart LR
+  A[Case Fixture YAML] --> B1[Oracle Run<br/>python-reference | cobol-command | cobol-executable]
+  A --> B2[V2 Run<br/>candidate engine or API]
+  B1 --> C1[Oracle Artifacts<br/>ledger_journal.dat<br/>reconcile_totals.dat<br/>exception_report.dat]
+  B2 --> C2[V2 Artifacts<br/>ledger_journal.dat<br/>reconcile_totals.dat<br/>exception_report.dat]
+  C1 --> D[Diff Engine + Invariant Checks]
+  C2 --> D
+  D --> E[diff_report.json]
+  D --> F[verify_report.json]
+```
+
+### Release Gate Promotion Flow
+
+```mermaid
+flowchart TD
+  A[Successful CI on commit] --> B[Release Gate workflow]
+  B --> C[Preflight run: oracle + v2 + diff + verify]
+  C --> D[Bless candidate baseline]
+  D --> E[Dual signatures on baseline manifest]
+  E --> F[Verify signatures and policy constraints]
+  F --> G[Promote candidate baseline to locked]
+  G --> H[Build evidence pack]
+  H --> I[Dual signatures on evidence manifest]
+  I --> J[Verify evidence pack integrity and signatures]
+  J --> K[Immutable upload with object lock]
+  K --> L[Publish release-evidence artifact]
+```
+
+### Batch Checkpoint and Restart
+
+```mermaid
+flowchart TD
+  A[Load checkpoint state] --> B[Select next uncommitted chunk]
+  B --> C[Write inflight.marker]
+  C --> D[Process chunk in LedgerEngine]
+  D --> E[Write chunk artifacts + chunk_manifest.json]
+  E --> F[mark_chunk_committed in checkpoint.json]
+  F --> G[Remove inflight.marker]
+  G --> H{More chunks?}
+  H -->|Yes| B
+  H -->|No| I[Finalize outputs from committed chunks only]
+  I --> J[ledger_journal.dat + exception_report.dat + reconcile_totals.dat]
+```
+
 ## Quick Start
 
 1. Install in editable mode:
