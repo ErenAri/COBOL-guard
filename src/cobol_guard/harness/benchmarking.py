@@ -16,7 +16,6 @@ import yaml
 
 from cobol_guard.batch.runner import execute_checkpointed_v2_batch
 from cobol_guard.candidate.engine import LedgerEngine
-from cobol_guard.candidate.service import CandidateLedger, PostRequest, ReverseRequest
 from cobol_guard.constants import RUNS_DIR
 from cobol_guard.contracts import Transaction
 
@@ -86,42 +85,43 @@ def generate_synthetic_transactions(count: int, business_date: str, seed: str) -
 
 def benchmark_transaction_path(operations: int, business_date: str, seed: str) -> dict[str, Any]:
     rng = random.Random(_seed_to_int(seed + ":txn"))
-    ledger = CandidateLedger()
+    engine = LedgerEngine()
     post_ids: list[tuple[str, str]] = []
     durations_ms: list[float] = []
     start_total = time.perf_counter()
     for idx in range(operations):
         if post_ids and idx % 10 == 0:
             original_request_id, account_id = post_ids[rng.randrange(len(post_ids))]
-            reverse_request_id = f"REVAPI{idx:010d}"
-            req = ReverseRequest(
-                reverse_request_id=reverse_request_id,
+            txn = Transaction(
+                request_id=f"REVAPI{idx:010d}",
+                operation="REVERSE",
                 original_request_id=original_request_id,
                 account_id=account_id,
+                amount_cents=0,
                 business_date=business_date,
                 event_time=f"{business_date}101010",
             )
             started = time.perf_counter_ns()
-            ledger.reverse(req)
+            engine.process([txn], business_date=business_date)
             ended = time.perf_counter_ns()
             durations_ms.append((ended - started) / 1_000_000.0)
             continue
 
-        request_id = f"REQAPI{idx:010d}"
         account_id = f"ACC{rng.randrange(1, 1000):09d}"
-        amount_cents = rng.randrange(100, 50000)
-        req = PostRequest(
-            request_id=request_id,
+        txn = Transaction(
+            request_id=f"REQAPI{idx:010d}",
+            operation="POST",
+            original_request_id="",
             account_id=account_id,
-            amount_cents=amount_cents,
+            amount_cents=rng.randrange(100, 50000),
             business_date=business_date,
             event_time=f"{business_date}101010",
         )
         started = time.perf_counter_ns()
-        ledger.post(req)
+        engine.process([txn], business_date=business_date)
         ended = time.perf_counter_ns()
         durations_ms.append((ended - started) / 1_000_000.0)
-        post_ids.append((request_id, account_id))
+        post_ids.append((txn.request_id, account_id))
 
     total_seconds = max(time.perf_counter() - start_total, 1e-9)
     tps = operations / total_seconds

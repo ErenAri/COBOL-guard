@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from cobol_guard.command_templates import render_command_template
 from cobol_guard.candidate.engine import EngineResult
 from cobol_guard.contracts import ExceptionRecord, JournalRecord, ReconcileTotals, Transaction
 from cobol_guard.io_utils import read_fixed_width_records
@@ -59,11 +60,16 @@ class OracleAdapter:
                 for row in transactions_payload:
                     handle.write(json.dumps(row, sort_keys=True) + "\n")
 
-            command = self.command_template.format(
-                input_jsonl=str(input_jsonl),
-                output_json=str(output_json),
-                business_date=business_date,
-                work_dir=str(work_dir),
+            command = render_command_template(
+                self.command_template,
+                required_fields={"input_jsonl", "output_json", "business_date"},
+                optional_fields={"work_dir"},
+                values={
+                    "input_jsonl": str(input_jsonl),
+                    "output_json": str(output_json),
+                    "business_date": business_date,
+                    "work_dir": str(work_dir),
+                },
             )
             completed = subprocess.run(command, shell=True, capture_output=True, text=True)
             if completed.returncode != 0:

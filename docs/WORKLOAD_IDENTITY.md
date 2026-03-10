@@ -10,6 +10,11 @@ GitHub OIDC + cloud KMS.
 3. Command prints a base64 signature to stdout.
 4. `kms-sign-manifest` stores signature envelope JSON.
 
+Command templates are validated before execution:
+- required placeholder: `{payload_b64}`
+- positional placeholders are rejected
+- unknown placeholders are rejected
+
 Release-gate workflow expects these secrets in `kms-command` mode:
 - `RELEASE_SIGNER_A_KMS_SIGN_COMMAND`
 - `RELEASE_SIGNER_B_KMS_SIGN_COMMAND`
@@ -88,5 +93,11 @@ bash tools/workload_identity/aws_kms_sign_command.sh <kms-key-id-or-arn> "{paylo
 
 Use checklist:
 - run `.github/workflows/release-gate.yml` with `cloud_provider=gcp` and `signing_mode=kms-command`
+- confirm the workflow-produced `release-evidence/preflight/benchmark_report.json` is present and that release verification consumed it with benchmark enforcement enabled
+- confirm `release-evidence/preflight/release_control_attestation.json` is present and references the captured benchmark/diff/verify artifacts
+- confirm `release-evidence/preflight/build_provenance.json` is present and hashes the benchmark/diff/verify/attestation artifacts for the exact workflow run
+- confirm `release-evidence/security/security_summary.json` is present beside `pip_audit.json`, `bandit.json`, and `sbom.json`
+- review any reported security findings before treating the run as releasable; current workflow publishes these artifacts as auditable evidence even when remediation is deferred
 - ensure `release-evidence/immutable/immutability_proof.json` exists
 - ensure `verify-evidence-pack` reports `"passed": true`
+- note that local reruns of `promote-baseline` and `evidence-pack` now require explicit `--force` when reusing an existing target

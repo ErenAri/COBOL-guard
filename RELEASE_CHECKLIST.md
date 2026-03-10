@@ -5,6 +5,7 @@ Use this checklist for each promoted baseline release (for example `v0.1`).
 ## 1) Prerequisites
 
 - [ ] `CI` workflow is green for the exact commit being released.
+- [ ] Review the `service-proof` and `security-proof` CI artifacts for the same commit before promotion.
 - [ ] Release signer command secrets are configured in GitHub (default signing mode):
   - [ ] `RELEASE_SIGNER_A_KMS_SIGN_COMMAND`
   - [ ] `RELEASE_SIGNER_B_KMS_SIGN_COMMAND`
@@ -32,13 +33,18 @@ Use this checklist for each promoted baseline release (for example `v0.1`).
   - [ ] `ticket`
   - [ ] `risk_statement`
   - [ ] `author`
-  - [ ] `evidence_pack_id` (example: `v0.1`)
-  - [ ] `kms_key_version` (optional metadata)
-  - [ ] `immutable_bucket` or secret fallback is set
+- [ ] `evidence_pack_id` (example: `v0.1`)
+- [ ] `kms_key_version` (optional metadata)
+- [ ] `immutable_bucket` or secret fallback is set
+- [ ] Benchmark profile `benchmark/profile.yml` is current for the release target; release-gate now generates and enforces benchmark evidence before promotion.
 
 ## 3) Confirm Promotion
 
 - [ ] Workflow completed successfully.
+- [ ] `release-evidence/preflight/release_control_attestation.json` is present and references the benchmark, diff, and verify reports used for promotion.
+- [ ] `release-evidence/preflight/build_provenance.json` is present and includes hashes for the benchmark, diff, verify, and attestation artifacts.
+- [ ] `release-evidence/security/security_summary.json` is present and matches the generated `pip_audit.json`, `bandit.json`, and `sbom.json` files.
+- [ ] Any published `pip_audit` or `bandit` findings are either zero or explicitly accepted for the release.
 - [ ] Locked baseline artifacts exist for target case:
   - [ ] `baselines/locked/<case_id>/baseline_manifest.json`
   - [ ] `baselines/locked/<case_id>/run_manifest.json`
@@ -48,7 +54,7 @@ Use this checklist for each promoted baseline release (for example `v0.1`).
 ## 4) Verify Evidence Pack Signatures
 
 - [ ] Download release artifact `release-evidence-<pack_id>` from workflow run.
-- [ ] Optional automation: `python tools/run_release_gate.py --ticket ... --risk-statement ... --author ... --evidence-pack-id <pack_id>`
+- [ ] Optional automation: `python tools/run_release_gate.py --ticket ... --risk-statement ... --author ... --evidence-pack-id <pack_id>` (`gh` CLI must be installed and authenticated first)
 - [ ] Verify evidence-pack integrity + signatures:
 
 ```bash
@@ -70,3 +76,4 @@ python -m cobol_guard.harness.cli verify-evidence-pack \
 - [ ] Create git tag (example: `v0.1`).
 - [ ] Publish GitHub Release.
 - [ ] Attach evidence pack zip and signature verification report to release assets.
+- [ ] For intentional local reruns of `promote-baseline` or `evidence-pack`, pass `--force`; otherwise existing targets are preserved.

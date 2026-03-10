@@ -103,7 +103,42 @@ python -m cobol_guard.harness.cli benchmark --case fixtures/cases/basic.yml --pr
 
 8. Start the candidate API:
 ```bash
+set COBOL_GUARD_DATABASE_URL=sqlite+pysqlite:///./cobol_guard.service.db
+set COBOL_GUARD_AUTH_MODE=hs256
+set COBOL_GUARD_JWT_HS256_SECRET=local-dev-secret
+set COBOL_GUARD_JWT_ISSUER=cobol-guard-local
+set COBOL_GUARD_JWT_AUDIENCE=cobol-guard-api
 v2-api
+```
+
+Candidate API operational routes:
+- `GET /healthz`: process liveness
+- `GET /readyz`: database readiness
+- `GET /metrics`: Prometheus metrics, requires `ops.metrics` scope when auth is enabled
+
+Candidate API persistence + runtime model:
+- the service persists request history, balances, and reconcile reports in the configured SQL database
+- local development can use SQLite as shown above
+- production deployments should set `COBOL_GUARD_DATABASE_URL` explicitly and treat the API as a stateful service, not an in-memory demo process
+
+Candidate API auth + rate limit controls:
+- supported auth modes: `disabled`, `hs256`, `jwks`
+- JWT scopes: `ledger.read`, `ledger.write`, `ops.metrics`
+- rate-limit env vars: `COBOL_GUARD_RATE_LIMIT_WRITE_RPS`, `COBOL_GUARD_RATE_LIMIT_READ_RPS`
+- service bind defaults to `127.0.0.1:8000`; override with `COBOL_GUARD_SERVICE_HOST` and `COBOL_GUARD_SERVICE_PORT`
+- when auth is enabled, business endpoints return structured JSON errors with `code`, `message`, and `request_id`
+
+Generate a local HS256 token for smoke testing:
+```bash
+python -c "import jwt; print(jwt.encode({'sub':'local-user','scope':'ledger.read ledger.write ops.metrics','iss':'cobol-guard-local','aud':'cobol-guard-api'}, 'local-dev-secret', algorithm='HS256'))"
+```
+
+Example authenticated API calls:
+```bash
+curl -H "Authorization: Bearer <token>" http://127.0.0.1:8000/readyz
+curl -H "Authorization: Bearer <token>" -H "Content-Type: application/json" ^
+  -d "{\"request_id\":\"REQ1\",\"account_id\":\"ACC000000001\",\"amount_cents\":1000,\"business_date\":\"20260110\",\"event_time\":\"20260110120000\"}" ^
+  http://127.0.0.1:8000/transactions/post
 ```
 
 ## Oracle Modes
@@ -117,6 +152,12 @@ Set external oracle mode:
 set COBOL_GUARD_ORACLE_MODE=cobol-command
 set COBOL_GUARD_ORACLE_COMMAND=python tools\\oracle_wrapper_reference.py --input "{input_jsonl}" --output "{output_json}" --business-date "{business_date}"
 ```
+
+Required oracle command-template placeholders:
+- `{input_jsonl}`
+- `{output_json}`
+- `{business_date}`
+- optional: `{work_dir}`
 
 Set direct COBOL executable mode:
 ```bash
@@ -177,10 +218,14 @@ python -m cobol_guard.harness.cli sign-manifest --manifest dist/evidence/v0.1/ev
 
 Use `.github/workflows/release-gate.yml` for controlled promotion from CI:
 - requires a successful `CI` workflow run on the commit
+- requires a passing benchmark report and enforces benchmark thresholds during release verification
 - re-runs release verification
 - enforces two valid Ed25519 signatures
 - promotes candidate baseline only after gates pass
 - builds and uploads a signed evidence pack artifact
+- emits `release-evidence/preflight/release_control_attestation.json` to prove benchmark-enforced preflight inputs were captured
+- emits `release-evidence/preflight/build_provenance.json` with commit/run metadata and hashes for the benchmark, diff, verify, and attestation artifacts
+- captures release-time security evidence under `release-evidence/security/` (`pip_audit.json`, `bandit.json`, `sbom.json`, `security_summary.json`)
 - `cloud_provider` input controls immutable storage and OIDC path (`gcp` default, `aws` optional)
 - default signing mode is `kms-command` using:
   - `RELEASE_SIGNER_A_KMS_SIGN_COMMAND`
@@ -233,8 +278,10 @@ python tools/run_release_gate.py \
 ```
 
 Notes:
+- `tools/run_release_gate.py` requires GitHub CLI (`gh`) to be installed and authenticated for the target repository.
 - the dispatcher enforces enterprise workflow inputs by default and fails fast if the remote branch still has a legacy `release-gate.yml`.
 - use `--allow-legacy-workflow` only for temporary triage while migrating older branches.
+- `promote-baseline` and `evidence-pack` refuse to overwrite existing targets by default; pass `--force` only for intentional local reruns.
 
 ## Repository Layout
 
@@ -246,6 +293,12 @@ Notes:
 - `src/cobol_guard/`: harness, candidate service, oracle adapter, governance logic.
 - `.github/workflows/ci.yml`: test and gate automation.
 - `.github/workflows/ci.yml` also contains scheduled/manual performance gate runs, uploads CI evidence artifacts (`run_manifest`/`diff_report`/`verify_report`/benchmark report), and enforces a GnuCOBOL `cobol-executable` parity + determinism gate.
+- `.github/workflows/ci.yml` includes a packaging-proof job that builds wheel/sdist, smoke-installs both, and emits `ci-evidence/packaging/packaging_proof.json` plus dependency inspection output.
+- `.github/workflows/ci.yml` includes a service-proof job that runs the persistent candidate service tests and publishes `ci-evidence/service/live_service_smoke.json`.
+- `.github/workflows/ci.yml` includes a security-proof job that publishes `pip_audit.json`, `bandit.json`, `sbom.json`, and summary artifacts.
+- `.github/workflows/ci.yml` emits `ci-evidence/packaging/build_provenance.json` alongside packaging proof.
+- `.github/workflows/ci.yml` keeps dependency and static-analysis evidence as review artifacts first; current findings are published even when they still represent backlog rather than enforced release blockers.
+- `.github/workflows/ci.yml` builds wheel/sdist artifacts, smoke-installs them, and publishes packaging/dependency proof reports.
 - `.github/workflows/ci.yml` contains a policy guard that fails if `release-gate.yml` default signing mode drifts from `kms-command`.
 - `.github/workflows/release-gate.yml`: gated baseline promotion workflow with CI-success precondition, dual-signature enforcement, and signed evidence pack export.
 - `RELEASE_CHECKLIST.md`: runbook for release promotion, evidence verification, and release publication.

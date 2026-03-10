@@ -81,10 +81,10 @@ jobs:
       GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
 
       - name: Require Successful CI On Commit
-        uses: actions/github-script@v7
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b
         with:
           script: |
             const owner = context.repo.owner;
@@ -108,7 +108,7 @@ jobs:
             core.info(`Found successful CI run #${successRun.run_number} for ${headSha}.`);
 
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
         with:
           python-version: "3.11"
 
@@ -143,21 +143,21 @@ jobs:
 
       - name: Configure AWS Credentials (OIDC)
         if: ${{ inputs.cloud_provider == 'aws' }}
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@ff717079ee2060e4bcee96c4779b553acc87447c
         with:
           role-to-assume: ${{ env.AWS_ROLE_TO_ASSUME }}
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Configure GCP Credentials (OIDC)
         if: ${{ inputs.cloud_provider == 'gcp' }}
-        uses: google-github-actions/auth@v2
+        uses: google-github-actions/auth@c200f3691d83b41bf9bbd8638997a462592937ed
         with:
           workload_identity_provider: ${{ env.GCP_WORKLOAD_IDENTITY_PROVIDER }}
           service_account: ${{ env.GCP_SERVICE_ACCOUNT }}
 
       - name: Setup gcloud
         if: ${{ inputs.cloud_provider == 'gcp' }}
-        uses: google-github-actions/setup-gcloud@v2
+        uses: google-github-actions/setup-gcloud@e427ad8a34f8676edf47cf7d7925499adf3eb74f
         with:
           project_id: ${{ env.GCP_PROJECT_ID }}
 
@@ -209,6 +209,37 @@ jobs:
       - name: Init Release Evidence Directory
         run: mkdir -p release-evidence
 
+      - name: Capture Security Evidence
+        run: |
+          mkdir -p release-evidence/security
+          set +e
+          pip-audit --local --format json --progress-spinner off > release-evidence/security/pip_audit.json
+          PIP_AUDIT_EXIT=$?
+          set -e
+          echo "$PIP_AUDIT_EXIT" > release-evidence/security/pip_audit_exit_code.txt
+          bandit -r src -f json -o release-evidence/security/bandit.json --exit-zero
+          cyclonedx-py environment --output-reproducible --of JSON -o release-evidence/security/sbom.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          pip_audit = json.loads(Path("release-evidence/security/pip_audit.json").read_text(encoding="utf-8"))
+          bandit = json.loads(Path("release-evidence/security/bandit.json").read_text(encoding="utf-8"))
+          summary = {
+              "pip_audit_dependencies": len(pip_audit.get("dependencies", [])),
+              "pip_audit_vulnerabilities": len(pip_audit.get("vulnerabilities", [])),
+              "pip_audit_exit_code": int(
+                  Path("release-evidence/security/pip_audit_exit_code.txt").read_text(encoding="utf-8").strip()
+              ),
+              "bandit_issue_count": len(bandit.get("results", [])),
+              "bandit_high_severity": bandit.get("metrics", {}).get("_totals", {}).get("SEVERITY.HIGH", 0),
+          }
+          Path("release-evidence/security/security_summary.json").write_text(
+              json.dumps(summary, indent=2, sort_keys=True) + "\n",
+              encoding="utf-8",
+          )
+          PY
+
       - name: Run Release Verification And Bless Candidate Baseline
         id: preflight
         run: |
@@ -226,16 +257,62 @@ jobs:
             export COBOL_GUARD_ORACLE_MODE=python-reference
           fi
 
+          mkdir -p release-evidence/preflight
+          python -m cobol_guard.harness.cli benchmark \
+            --case "${{ inputs.case_path }}" \
+            --profile benchmark/profile.yml \
+            --output release-evidence/preflight/benchmark_report.json \
+            --assert-gates
+
           ORACLE_DIR=$(python -m cobol_guard.harness.cli run --target oracle --case "${{ inputs.case_path }}")
           V2_DIR=$(python -m cobol_guard.harness.cli run --target v2 --case "${{ inputs.case_path }}")
           python -m cobol_guard.harness.cli diff --baseline-dir "$ORACLE_DIR" --candidate-dir "$V2_DIR"
-          python -m cobol_guard.harness.cli verify --baseline-dir "$ORACLE_DIR" --candidate-dir "$V2_DIR" --determinism-case "${{ inputs.case_path }}" --adapter-parity-case "${{ inputs.case_path }}"
+          python -m cobol_guard.harness.cli verify --baseline-dir "$ORACLE_DIR" --candidate-dir "$V2_DIR" --determinism-case "${{ inputs.case_path }}" --adapter-parity-case "${{ inputs.case_path }}" --benchmark-report release-evidence/preflight/benchmark_report.json --require-benchmark
 
-          mkdir -p release-evidence/preflight
           cp "$ORACLE_DIR"/run_manifest.json release-evidence/preflight/oracle_run_manifest.json
           cp "$V2_DIR"/run_manifest.json release-evidence/preflight/v2_run_manifest.json
           cp "$V2_DIR"/diff_report.json release-evidence/preflight/diff_report.json
           cp "$V2_DIR"/verify_report.json release-evidence/preflight/verify_report.json
+          python - <<'PY'
+          import json
+          import hashlib
+          import os
+          from pathlib import Path
+
+          def sha256_file(path: Path) -> str:
+              hasher = hashlib.sha256()
+              with path.open("rb") as handle:
+                  for chunk in iter(lambda: handle.read(65536), b""):
+                      hasher.update(chunk)
+              return hasher.hexdigest()
+
+          attestation = {
+              "benchmark_required": True,
+              "benchmark_report_path": "release-evidence/preflight/benchmark_report.json",
+              "verify_report_path": "release-evidence/preflight/verify_report.json",
+              "diff_report_path": "release-evidence/preflight/diff_report.json",
+              "oracle_run_manifest_path": "release-evidence/preflight/oracle_run_manifest.json",
+              "candidate_run_manifest_path": "release-evidence/preflight/v2_run_manifest.json",
+          }
+          Path("release-evidence/preflight/release_control_attestation.json").write_text(
+              json.dumps(attestation, indent=2, sort_keys=True) + "\n",
+              encoding="utf-8",
+          )
+          provenance = {
+              "commit_sha": os.environ.get("GITHUB_SHA", ""),
+              "workflow_run_id": os.environ.get("GITHUB_RUN_ID", ""),
+              "benchmark_report_sha256": sha256_file(Path("release-evidence/preflight/benchmark_report.json")),
+              "diff_report_sha256": sha256_file(Path("release-evidence/preflight/diff_report.json")),
+              "verify_report_sha256": sha256_file(Path("release-evidence/preflight/verify_report.json")),
+              "release_control_attestation_sha256": sha256_file(
+                  Path("release-evidence/preflight/release_control_attestation.json")
+              ),
+          }
+          Path("release-evidence/preflight/build_provenance.json").write_text(
+              json.dumps(provenance, indent=2, sort_keys=True) + "\n",
+              encoding="utf-8",
+          )
+          PY
 
           BLESS_DIR=$(python -m cobol_guard.harness.cli bless --baseline candidate --target oracle --case "${{ inputs.case_path }}" --change-class "${{ inputs.change_class }}" --ticket "${{ inputs.ticket }}" --risk-statement "${{ inputs.risk_statement }}" --author "${{ inputs.author }}")
           mkdir -p release-evidence/candidate-baseline
@@ -394,7 +471,7 @@ jobs:
           echo "immutable_ref=$URI" >> "$GITHUB_OUTPUT"
 
       - name: Upload Release Evidence Pack
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: release-evidence-${{ steps.pack.outputs.pack_id }}
           path: |

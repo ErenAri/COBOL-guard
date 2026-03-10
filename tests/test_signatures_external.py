@@ -26,11 +26,24 @@ def test_sign_file_via_command_returns_envelope(tmp_path: Path) -> None:
 def test_sign_file_via_command_raises_on_bad_output(tmp_path: Path) -> None:
     manifest_path = tmp_path / "manifest.json"
     manifest_path.write_text('{"ok": true}\n', encoding="utf-8")
-    command_template = "python -c \"print('not-base64')\""
+    command_template = "python -c \"import sys; print('not-base64')\" \"{payload_b64}\""
     with pytest.raises(RuntimeError):
         sign_file_via_command(
             manifest_path=manifest_path,
             key_id="kms_signer_a",
             command_template=command_template,
+            algorithm="kms-ed25519",
+        )
+
+
+def test_sign_file_via_command_rejects_missing_payload_placeholder(tmp_path: Path) -> None:
+    manifest_path = tmp_path / "manifest.json"
+    manifest_path.write_text('{"ok": true}\n', encoding="utf-8")
+
+    with pytest.raises(ValueError, match="missing required placeholders: payload_b64"):
+        sign_file_via_command(
+            manifest_path=manifest_path,
+            key_id="kms_signer_a",
+            command_template="python -c \"print('ok')\"",
             algorithm="kms-ed25519",
         )

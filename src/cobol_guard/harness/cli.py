@@ -223,11 +223,16 @@ def cmd_verify(args: argparse.Namespace) -> int:
         change_class=args.change_class,
     )
 
+    benchmark_required = bool(args.require_benchmark)
     benchmark_payload: dict[str, Any] | None = None
     performance_violations: list[str] = []
-    if args.benchmark_report:
+    if benchmark_required and not args.benchmark_report:
+        performance_violations.append("benchmark_report_required")
+    elif args.benchmark_report:
         benchmark_payload = _load_json(path=Path(args.benchmark_report).resolve())
         performance_violations = evaluate_benchmark_gates(benchmark_report=benchmark_payload, policy=policy)
+
+    if performance_violations:
         decision.blockers.extend([f"performance_gate_failed:{item}" for item in performance_violations])
         decision.blockers = _unique_sorted(decision.blockers)
         decision.passed = not decision.blockers and not decision.criticals and not decision.majors
@@ -251,6 +256,7 @@ def cmd_verify(args: argparse.Namespace) -> int:
             "report": adapter_parity_report,
         },
         "performance": {
+            "required": benchmark_required,
             "benchmark_report_path": args.benchmark_report,
             "benchmark_report": benchmark_payload,
             "violations": performance_violations,
@@ -411,6 +417,9 @@ def cmd_promote_baseline(args: argparse.Namespace) -> int:
     target_dir = baselines_root / "locked" / case_id
     target_dir.parent.mkdir(parents=True, exist_ok=True)
     if target_dir.exists():
+        if not args.force:
+            print(f"target baseline already exists: {target_dir} (pass --force to overwrite)", file=sys.stderr)
+            return 2
         shutil.rmtree(target_dir)
     shutil.copytree(source_dir, target_dir)
     print(target_dir)
@@ -431,6 +440,7 @@ def cmd_evidence_pack(args: argparse.Namespace) -> int:
         policy_version=str(policy.get("version", "unknown")),
         environment=os.environ.get("COBOL_GUARD_ENVIRONMENT", "local"),
         workflow_run_id=_workflow_run_id_from_env(),
+        force=args.force,
     )
     if args.output:
         write_json(path=Path(args.output).resolve(), payload=result)
@@ -513,6 +523,7 @@ def build_parser() -> argparse.ArgumentParser:
     verify_parser.add_argument("--determinism-repeats", default=5, type=int)
     verify_parser.add_argument("--adapter-parity-case")
     verify_parser.add_argument("--benchmark-report")
+    verify_parser.add_argument("--require-benchmark", action="store_true")
     verify_parser.add_argument("--output")
     verify_parser.set_defaults(func=cmd_verify)
 
@@ -550,6 +561,7 @@ def build_parser() -> argparse.ArgumentParser:
     promote_parser.add_argument("--policy")
     promote_parser.add_argument("--keys-dir")
     promote_parser.add_argument("--baselines-root")
+    promote_parser.add_argument("--force", action="store_true")
     promote_parser.set_defaults(func=cmd_promote_baseline)
 
     evidence_parser = sub.add_parser("evidence-pack", help="Build evidence pack archive")
@@ -560,6 +572,7 @@ def build_parser() -> argparse.ArgumentParser:
     evidence_parser.add_argument("--retention-class", default="standard")
     evidence_parser.add_argument("--immutability-proof-ref", default="")
     evidence_parser.add_argument("--provenance-ref", default="")
+    evidence_parser.add_argument("--force", action="store_true")
     evidence_parser.add_argument("--output")
     evidence_parser.set_defaults(func=cmd_evidence_pack)
 

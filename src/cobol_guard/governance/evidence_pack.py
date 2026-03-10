@@ -46,6 +46,7 @@ def build_evidence_pack(
     environment: str = "",
     workflow_run_id: str = "",
     repo_root: Path = REPO_ROOT,
+    force: bool = False,
 ) -> dict[str, str | int]:
     normalized_pack_id = str(pack_id).strip()
     if not normalized_pack_id:
@@ -61,6 +62,8 @@ def build_evidence_pack(
     pack_dir = output_dir / normalized_pack_id
     content_dir = pack_dir / "content"
     if pack_dir.exists():
+        if not force:
+            raise FileExistsError(f"evidence pack already exists: {pack_dir} (pass force=True to overwrite)")
         shutil.rmtree(pack_dir)
     content_dir.mkdir(parents=True, exist_ok=True)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -110,6 +113,8 @@ def build_evidence_pack(
 
     archive_path = output_dir / f"{normalized_pack_id}.zip"
     if archive_path.exists():
+        if not force:
+            raise FileExistsError(f"evidence archive already exists: {archive_path} (pass force=True to overwrite)")
         archive_path.unlink()
     with ZipFile(archive_path, mode="w", compression=ZIP_DEFLATED) as archive:
         archive.write(manifest_path, arcname=f"{normalized_pack_id}/evidence_manifest.json")

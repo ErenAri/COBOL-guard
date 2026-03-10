@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from cobol_guard.command_templates import render_command_template
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey, Ed25519PublicKey
 
@@ -90,10 +91,15 @@ def sign_file_via_command(
 
     payload = manifest_path.read_bytes()
     payload_b64 = base64.b64encode(payload).decode("ascii")
-    command = command_template.format(
-        manifest_path=str(manifest_path),
-        key_id=key_id,
-        payload_b64=payload_b64,
+    command = render_command_template(
+        command_template,
+        required_fields={"payload_b64"},
+        optional_fields={"manifest_path", "key_id"},
+        values={
+            "manifest_path": str(manifest_path),
+            "key_id": key_id,
+            "payload_b64": payload_b64,
+        },
     )
     completed = subprocess.run(command, shell=True, capture_output=True, text=True)
     if completed.returncode != 0:

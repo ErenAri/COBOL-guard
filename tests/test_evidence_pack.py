@@ -2,6 +2,8 @@ import json
 from pathlib import Path
 from zipfile import ZipFile
 
+import pytest
+
 from cobol_guard.governance.evidence_pack import build_evidence_pack
 
 
@@ -54,3 +56,36 @@ def test_build_evidence_pack_creates_manifest_and_archive(tmp_path: Path) -> Non
     assert "v0.1/content/SPEC.md" in names
     assert "v0.1/content/evidence-input/a.txt" in names
     assert "v0.1/content/evidence-input/nested/b.txt" in names
+
+
+def test_build_evidence_pack_requires_force_to_overwrite(tmp_path: Path) -> None:
+    repo_root = tmp_path / "repo"
+    include_dir = repo_root / "evidence-input"
+    include_dir.mkdir(parents=True, exist_ok=True)
+    (repo_root / "SPEC.md").write_text("spec\n", encoding="utf-8")
+    (include_dir / "a.txt").write_text("A\n", encoding="utf-8")
+
+    output_dir = tmp_path / "dist" / "evidence"
+    build_evidence_pack(
+        pack_id="v0.1",
+        include_paths=[Path("SPEC.md"), Path("evidence-input")],
+        output_dir=output_dir,
+        repo_root=repo_root,
+    )
+
+    with pytest.raises(FileExistsError):
+        build_evidence_pack(
+            pack_id="v0.1",
+            include_paths=[Path("SPEC.md"), Path("evidence-input")],
+            output_dir=output_dir,
+            repo_root=repo_root,
+        )
+
+    result = build_evidence_pack(
+        pack_id="v0.1",
+        include_paths=[Path("SPEC.md"), Path("evidence-input")],
+        output_dir=output_dir,
+        repo_root=repo_root,
+        force=True,
+    )
+    assert Path(str(result["manifest_path"])).exists()
